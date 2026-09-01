@@ -1,0 +1,25 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# .NET build output
+bin/
+obj/
+artifacts/
+TestResults/
+
+# Visual Studio and user-specific files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Runtime output
+*.log
+storage/
+
+# OS-generated files
+.DS_Store
+Thumbs.db
