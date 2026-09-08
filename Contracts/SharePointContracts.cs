@@ -48,6 +48,8 @@ public sealed class SharePointCandidateCreateRequest
     [MaxLength(32)] public string CountryCode { get; init; } = "+966";
     [MaxLength(40)] public string Phone { get; init; } = "";
     [MaxLength(100)] public string Country { get; init; } = "Saudi Arabia";
+    [MaxLength(50)] public string Nationality { get; init; } = "";
+    [MaxLength(20)] public string Gender { get; init; } = "";
     [MaxLength(100)] public string City { get; init; } = "";
     [MaxLength(150)] public string ProfessionalTitle { get; init; } = "Candidate";
     [MaxLength(2000)] public string About { get; init; } = "";
@@ -65,6 +67,8 @@ public sealed class SharePointCandidateCreateRequest
         ["CountryCode"] = CountryCode.Trim(),
         ["Phone"] = Phone.Trim(),
         ["Country"] = Country.Trim(),
+        ["Nationality"] = Nationality.Trim(),
+        ["Gender"] = Gender.Trim(),
         ["City"] = City.Trim(),
         ["ProfessionalTitle"] = ProfessionalTitle.Trim(),
         ["About"] = About.Trim(),
@@ -82,6 +86,8 @@ public sealed class SharePointCandidateUpdateRequest
     [MaxLength(32)] public string? CountryCode { get; init; }
     [MaxLength(40)] public string? Phone { get; init; }
     [MaxLength(100)] public string? Country { get; init; }
+    [MaxLength(50)] public string? Nationality { get; init; }
+    [MaxLength(20)] public string? Gender { get; init; }
     [MaxLength(100)] public string? City { get; init; }
     [MaxLength(150)] public string? ProfessionalTitle { get; init; }
     [MaxLength(2000)] public string? About { get; init; }
@@ -91,7 +97,7 @@ public sealed class SharePointCandidateUpdateRequest
     public Dictionary<string, object?> ToFields() => SharePointFieldMappings.OptionalFields(
         ("Title", CandidateName), ("Email", Email?.ToLowerInvariant()), ("FirstName", FirstName),
         ("LastName", LastName), ("CountryCode", CountryCode), ("Phone", Phone),
-        ("Country", Country), ("City", City), ("ProfessionalTitle", ProfessionalTitle),
+        ("Country", Country), ("Nationality", Nationality), ("Gender", Gender), ("City", City), ("ProfessionalTitle", ProfessionalTitle),
         ("About", About), ("Role", Role), ("ResumeUrl", ResumeUrl));
 }
 

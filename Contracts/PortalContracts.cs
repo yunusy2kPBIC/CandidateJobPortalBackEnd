@@ -5,6 +5,30 @@ namespace CandidatePortal.Api.Contracts;
 
 public sealed record MessageResponse(string Message);
 
+public sealed class EmailAvailabilityRequest
+{
+    [Required, EmailAddress, MaxLength(255)] public string Email { get; init; } = "";
+}
+
+public sealed record EmailAvailabilityResponse(bool Available, bool PendingVerification);
+
+public sealed class VerifyEmailRequest
+{
+    [Required, EmailAddress, MaxLength(255)] public string Email { get; init; } = "";
+    [Required, RegularExpression(@"^\d{6}$")] public string Code { get; init; } = "";
+}
+
+public sealed class ResendVerificationRequest
+{
+    [Required, EmailAddress, MaxLength(255)] public string Email { get; init; } = "";
+}
+
+public sealed record RegistrationPendingResponse(
+    string Email,
+    DateTime ExpiresAt,
+    DateTime ResendAvailableAt,
+    string? DevVerificationCode);
+
 public sealed class RegisterRequest
 {
     [Required, EmailAddress, MaxLength(255)] public string Email { get; init; } = "";
@@ -16,6 +40,9 @@ public sealed class RegisterRequest
     [MaxLength(32)] public string CountryCode { get; init; } = "+966";
     [Required, MinLength(6), MaxLength(40)] public string Phone { get; init; } = "";
     [Required, MinLength(2), MaxLength(100)] public string Country { get; init; } = "";
+    [MaxLength(50)] public string Nationality { get; init; } = "";
+    [Required, MaxLength(20)] public string Gender { get; init; } = "";
+    public bool IsStudent { get; init; }
     public bool AcceptedTerms { get; init; }
 }
 
@@ -39,6 +66,8 @@ public sealed class ProfileUpdateRequest
     [MaxLength(32)] public string CountryCode { get; init; } = "";
     [MaxLength(40)] public string Phone { get; init; } = "";
     [MaxLength(100)] public string Country { get; init; } = "";
+    [MaxLength(50)] public string Nationality { get; init; } = "";
+    [MaxLength(20)] public string Gender { get; init; } = "";
     [MaxLength(100)] public string City { get; init; } = "";
     [MaxLength(150)] public string Title { get; init; } = "";
     [MaxLength(2000)] public string About { get; init; } = "";
@@ -52,14 +81,24 @@ public sealed record UserResponse(
     string CountryCode,
     string Phone,
     string Country,
+    string Nationality,
+    string Gender,
     string City,
     string Title,
     string About,
     string Role,
+    bool IsEmailVerified,
     string? ResumeName,
     DateTime CreatedAt);
 
 public sealed record AuthResponse(string AccessToken, string TokenType, UserResponse User);
+
+public sealed record ExternalAuthProvidersResponse(bool Google, bool Microsoft);
+
+public sealed class ExternalAuthExchangeRequest
+{
+    [Required, MinLength(20), MaxLength(500)] public string Code { get; init; } = "";
+}
 
 public sealed record JobResponse(
     int Id,
@@ -83,6 +122,14 @@ public sealed record JobListResponse(
     int Total,
     IReadOnlyDictionary<string, IReadOnlyList<string>> Filters);
 
+public sealed record LookupCountryResponse(string Name, IReadOnlyList<string> Cities);
+
+public sealed record LookupOptionsResponse(
+    IReadOnlyList<LookupCountryResponse> Countries,
+    IReadOnlyList<string> Divisions,
+    IReadOnlyList<string> JobFunctions,
+    IReadOnlyList<string> CareerLevels);
+
 public sealed record ApplicationResponse(
     int Id,
     string ApplicationCode,
@@ -104,6 +151,7 @@ public sealed record AdminSummaryResponse(int Users, int Candidates, int Admins,
 public sealed record AdminJobOptionsResponse(
     IReadOnlyList<string> Countries,
     IReadOnlyList<string> Cities,
+    IReadOnlyDictionary<string, IReadOnlyList<string>> CitiesByCountry,
     IReadOnlyList<string> Divisions,
     IReadOnlyList<string> JobFunctions,
     IReadOnlyList<string> CareerLevels);
@@ -165,6 +213,8 @@ public sealed record AdminCandidateResponse(
     string LastName,
     string Phone,
     string Country,
+    string Nationality,
+    string Gender,
     string City,
     string Title,
     string? ResumeName,
@@ -212,7 +262,8 @@ public static class PortalMappings
 {
     public static UserResponse ToResponse(this User user) => new(
         user.Id, user.Email, user.FirstName, user.LastName, user.CountryCode, user.Phone,
-        user.Country, user.City, user.Title, user.About, user.Role, user.ResumeName, user.CreatedAt);
+        user.Country, user.Nationality, user.Gender, user.City, user.Title, user.About, user.Role,
+        user.IsEmailVerified, user.ResumeName, user.CreatedAt);
 
     public static JobResponse ToResponse(this Job job) => new(
         job.Id, job.Title, job.Division, job.Country, job.City, job.JobFunction,
@@ -238,6 +289,8 @@ public static class PortalValues
     public static readonly HashSet<string> EmploymentTypes = ["Full-time", "Part-time", "Contract", "Remote"];
     public static readonly HashSet<string> ApplicationStatuses =
         ["Under Review", "Interview", "Shortlisted", "Rejected", "Hired", "Withdrawn"];
+    public static readonly HashSet<string> Nationalities = ["Saudi Arabia", "GCC", "Others"];
+    public static readonly HashSet<string> Genders = ["Male", "Female", "Other"];
     public static readonly HashSet<string> Languages = ["English", "Arabic"];
     public static readonly HashSet<string> Themes = ["light", "dark"];
 }

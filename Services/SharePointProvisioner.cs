@@ -78,7 +78,10 @@ internal static class SharePointProvisioner
         using var body = await client.SendAsync(HttpMethod.Get,
             $"/sites/{Uri.EscapeDataString(siteId)}/lists/{Uri.EscapeDataString(listId)}/columns",
             null, null, cancellationToken);
-        var existing = body?.RootElement.GetProperty("value").EnumerateArray()
+        var existingColumns = body?.RootElement.GetProperty("value").EnumerateArray()
+            .Select(value => value.Clone())
+            .ToArray() ?? [];
+        var existing = existingColumns
             .SelectMany(value => new[]
             {
                 value.TryGetProperty("name", out var name) ? name.GetString() : null,
@@ -90,13 +93,61 @@ internal static class SharePointProvisioner
         {
             var name = Convert.ToString(definition["name"])!;
             var displayName = Convert.ToString(definition["displayName"])!;
-            if (existing.Contains(name) || existing.Contains(displayName)) continue;
+            if (existing.Contains(name) || existing.Contains(displayName))
+            {
+                var column = existingColumns.First(value =>
+                    (value.TryGetProperty("name", out var columnName) &&
+                        string.Equals(columnName.GetString(), name, StringComparison.OrdinalIgnoreCase)) ||
+                    (value.TryGetProperty("displayName", out var columnDisplayName) &&
+                        string.Equals(columnDisplayName.GetString(), displayName, StringComparison.OrdinalIgnoreCase)));
+                await AddMissingChoiceValues(client, siteId, listId, column, definition, cancellationToken);
+                continue;
+            }
             using var _ = await client.SendAsync(HttpMethod.Post,
                 $"/sites/{Uri.EscapeDataString(siteId)}/lists/{Uri.EscapeDataString(listId)}/columns",
                 definition, null, cancellationToken);
             existing.Add(name);
             existing.Add(displayName);
         }
+    }
+
+    private static async Task AddMissingChoiceValues(
+        GraphSharePointClient client,
+        string siteId,
+        string listId,
+        JsonElement column,
+        IReadOnlyDictionary<string, object?> definition,
+        CancellationToken cancellationToken)
+    {
+        if (!definition.TryGetValue("choice", out var desiredChoiceValue) || desiredChoiceValue is null ||
+            !column.TryGetProperty("choice", out var existingChoice) ||
+            !existingChoice.TryGetProperty("choices", out var existingChoices))
+            return;
+
+        var desiredChoice = JsonSerializer.SerializeToElement(desiredChoiceValue);
+        var merged = existingChoices.EnumerateArray()
+            .Select(value => value.GetString())
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Cast<string>()
+            .ToList();
+        foreach (var choice in desiredChoice.GetProperty("choices").EnumerateArray()
+                     .Select(value => value.GetString())
+                     .Where(value => !string.IsNullOrWhiteSpace(value))
+                     .Cast<string>())
+        {
+            if (!merged.Contains(choice, StringComparer.OrdinalIgnoreCase)) merged.Add(choice);
+        }
+        if (merged.Count == existingChoices.GetArrayLength()) return;
+
+        var columnId = column.GetProperty("id").GetString()
+            ?? throw new ApiException(502, "SharePoint returned a column without an ID");
+        var allowTextEntry = existingChoice.TryGetProperty("allowTextEntry", out var allowText) && allowText.GetBoolean();
+        var displayAs = existingChoice.TryGetProperty("displayAs", out var display)
+            ? display.GetString() ?? "dropDownMenu"
+            : "dropDownMenu";
+        using var _ = await client.SendAsync(HttpMethod.Patch,
+            $"/sites/{Uri.EscapeDataString(siteId)}/lists/{Uri.EscapeDataString(listId)}/columns/{Uri.EscapeDataString(columnId)}",
+            new { choice = new { allowTextEntry, choices = merged, displayAs } }, null, cancellationToken);
     }
 
     private static Dictionary<string, object?> Text(string name, bool required = false, bool multiline = false, string? displayName = null) => new()
@@ -144,8 +195,9 @@ internal static class SharePointProvisioner
     private static IReadOnlyList<Dictionary<string, object?>> CandidateColumns() =>
     [
         Text("PortalCandidateId", true), Text("Email", true), Text("FirstName", true), Text("LastName", true),
-        Text("CountryCode"), Text("Phone"), Text("Country"), Text("City"), Text("ProfessionalTitle"), Text("About", multiline: true),
-        Choice("Role", ["Candidate", "Admin"], true),
+        Text("CountryCode"), Text("Phone"), Text("Country"), Choice("Nationality", ["Saudi Arabia", "GCC", "Others"]),
+        Choice("Gender", ["Male", "Female", "Other"]), Text("City"), Text("ProfessionalTitle"), Text("About", multiline: true),
+        Choice("Role", ["Candidate", "Student", "HR Admin", "Admin"], true),
         new() { ["name"] = "ResumeUrl", ["displayName"] = "ResumeUrl", ["hyperlinkOrPicture"] = new { isPicture = false } },
     ];
     private static IReadOnlyList<Dictionary<string, object?>> JobColumns() =>
@@ -180,7 +232,7 @@ internal static class SharePointProvisioner
     [
         Text("FirstName", true, displayName: "First Name"), Text("LastName", true, displayName: "Last Name"),
         Text("IdNumber", true, displayName: "ID Number"), Text("MobileNumber", true, displayName: "Mobile Number"), Text("Email", true),
-        Choice("Gender", ["Male", "Female", "Other"], true), Number("TrainingDuration", true, 1, 24, "Training Duration (Months)"),
+        Choice("Gender", ["Male", "Female", "Other"], true), Number("TrainingDuration", true, 3, 6, "Training Duration (Months)"),
         Choice("Semester", ["First Semester", "Second Semester", "Summer Semester"], true),
         Date("TrainingStartingDate", true, true, "Training Starting Date"),
         Text("TrainingSupervisorName", true, displayName: "Training Supervisor Name"),

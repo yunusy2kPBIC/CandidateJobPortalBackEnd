@@ -3,16 +3,26 @@ namespace CandidatePortal.Api.Configuration;
 public sealed class PortalOptions
 {
     public string AppName { get; init; } = "PBICareerPosting API";
-    public string DatabaseProvider { get; init; } = "postgresql";
-    public required string DatabaseUrl { get; init; }
+    public required string SqlServerConnectionString { get; init; }
     public required string SecretKey { get; init; }
     public int AccessTokenMinutes { get; init; } = 480;
-    //public string[] FrontendOrigins { get; init; } = ["http://localhost:5173"];
-    public string[] FrontendOrigins { get; init; } = ["http://localhost:5174"];
+    public string[] FrontendOrigins { get; init; } = ["http://localhost:5173"];
     public bool AutoCreateSchema { get; init; }
     public bool SeedDemoData { get; init; }
     public string BootstrapAdminEmail { get; init; } = "";
     public string BootstrapAdminPassword { get; init; } = "";
+    public string BootstrapHrAdminEmail { get; init; } = "";
+    public string BootstrapHrAdminPassword { get; init; } = "";
+    public string GoogleAuthClientId { get; init; } = "";
+    public string GoogleAuthClientSecret { get; init; } = "";
+    public string MicrosoftAuthClientId { get; init; } = "";
+    public string MicrosoftAuthClientSecret { get; init; } = "";
+    public string EmailDeliveryMode { get; init; } = "development";
+    public string EmailSenderAddress { get; init; } = "dev-no-reply@candidateportal.local";
+    public int EmailVerificationMinutes { get; init; } = 10;
+    public int EmailVerificationResendSeconds { get; init; } = 60;
+    public int EmailVerificationMaxAttempts { get; init; } = 5;
+    public bool ExposeDevelopmentVerificationCode { get; init; } = true;
     public string StorageProvider { get; init; } = "local";
     public string LocalStoragePath { get; init; } = "../storage";
     public string SharePointTenantId { get; init; } = "";
@@ -31,6 +41,14 @@ public sealed class PortalOptions
     public double SharePointTimeoutSeconds { get; init; } = 30;
     public bool SharePointSyncEnabled { get; init; }
 
+    public bool GoogleAuthEnabled =>
+        !string.IsNullOrWhiteSpace(GoogleAuthClientId) &&
+        !string.IsNullOrWhiteSpace(GoogleAuthClientSecret);
+
+    public bool MicrosoftAuthEnabled =>
+        !string.IsNullOrWhiteSpace(MicrosoftAuthClientId) &&
+        !string.IsNullOrWhiteSpace(MicrosoftAuthClientSecret);
+
     public bool SharePointConfigured =>
         !string.IsNullOrWhiteSpace(SharePointTenantId) &&
         !string.IsNullOrWhiteSpace(SharePointClientId) &&
@@ -46,32 +64,41 @@ public sealed class PortalOptions
         static double DecimalNumber(IConfiguration config, string name, double fallback) =>
             double.TryParse(config[name], out var value) ? value : fallback;
 
-        var databaseProvider = (configuration["DATABASE_PROVIDER"] ?? "postgresql")
-            .Trim().ToLowerInvariant();
-        var databaseUrl = databaseProvider == "sqlserver"
-            ? configuration["SQLSERVER_CONNECTION_STRING"] ?? configuration["DATABASE_URL"]
-            : configuration["DATABASE_URL"];
-        if (string.IsNullOrWhiteSpace(databaseUrl))
+        var sqlServerConnectionString = configuration["SQLSERVER_CONNECTION_STRING"];
+        if (string.IsNullOrWhiteSpace(sqlServerConnectionString))
         {
-            databaseUrl = databaseProvider == "sqlserver"
-                ? "Server=DESKTOP-NCLK3BN;Database=CandidatePortal;Integrated Security=True;Encrypt=False;TrustServerCertificate=True"
-                : "Host=localhost;Port=5432;Database=candidate_portal;Username=candidate_portal;Password=CHANGE_ME";
+            sqlServerConnectionString =
+                "Server=DESKTOP-NCLK3BN;Database=CandidatePortal;Integrated Security=True;Encrypt=False;TrustServerCertificate=True";
+        }
+        var frontendOrigins = (configuration["FRONTEND_ORIGIN"] ?? "http://localhost:5173")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (frontendOrigins.Length == 0)
+        {
+            frontendOrigins = ["http://localhost:5173"];
         }
 
         return new PortalOptions
         {
-            DatabaseProvider = databaseProvider,
-            DatabaseUrl = databaseUrl,
+            SqlServerConnectionString = sqlServerConnectionString,
             SecretKey = configuration["SECRET_KEY"] ?? "development-only-change-me",
             AccessTokenMinutes = Number(configuration, "ACCESS_TOKEN_MINUTES", 480),
-            //FrontendOrigins = (configuration["FRONTEND_ORIGIN"] ?? "http://localhost:5173")
-            FrontendOrigins = (configuration["FRONTEND_ORIGIN"] ?? "http://localhost:5174" +
-            "")
-                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            FrontendOrigins = frontendOrigins,
             AutoCreateSchema = Flag(configuration, "AUTO_CREATE_SCHEMA"),
             SeedDemoData = Flag(configuration, "SEED_DEMO_DATA"),
             BootstrapAdminEmail = (configuration["BOOTSTRAP_ADMIN_EMAIL"] ?? "").Trim().ToLowerInvariant(),
             BootstrapAdminPassword = configuration["BOOTSTRAP_ADMIN_PASSWORD"] ?? "",
+            BootstrapHrAdminEmail = (configuration["BOOTSTRAP_HR_ADMIN_EMAIL"] ?? "").Trim().ToLowerInvariant(),
+            BootstrapHrAdminPassword = configuration["BOOTSTRAP_HR_ADMIN_PASSWORD"] ?? "",
+            GoogleAuthClientId = configuration["GOOGLE_AUTH_CLIENT_ID"] ?? "",
+            GoogleAuthClientSecret = configuration["GOOGLE_AUTH_CLIENT_SECRET"] ?? "",
+            MicrosoftAuthClientId = configuration["MICROSOFT_AUTH_CLIENT_ID"] ?? "",
+            MicrosoftAuthClientSecret = configuration["MICROSOFT_AUTH_CLIENT_SECRET"] ?? "",
+            EmailDeliveryMode = (configuration["EMAIL_DELIVERY_MODE"] ?? "development").Trim().ToLowerInvariant(),
+            EmailSenderAddress = (configuration["EMAIL_SENDER_ADDRESS"] ?? "dev-no-reply@candidateportal.local").Trim(),
+            EmailVerificationMinutes = Math.Clamp(Number(configuration, "EMAIL_VERIFICATION_MINUTES", 10), 5, 60),
+            EmailVerificationResendSeconds = Math.Clamp(Number(configuration, "EMAIL_VERIFICATION_RESEND_SECONDS", 60), 30, 300),
+            EmailVerificationMaxAttempts = Math.Clamp(Number(configuration, "EMAIL_VERIFICATION_MAX_ATTEMPTS", 5), 3, 10),
+            ExposeDevelopmentVerificationCode = Flag(configuration, "EMAIL_EXPOSE_DEVELOPMENT_CODE", true),
             StorageProvider = configuration["STORAGE_PROVIDER"] ?? "local",
             LocalStoragePath = configuration["LOCAL_STORAGE_PATH"] ?? "../storage",
             SharePointTenantId = configuration["SHAREPOINT_TENANT_ID"] ?? "",

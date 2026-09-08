@@ -2,13 +2,14 @@ using CandidatePortal.Api.Contracts;
 using CandidatePortal.Api.Data;
 using CandidatePortal.Api.Infrastructure;
 using CandidatePortal.Api.Models;
+using CandidatePortal.Api.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace CandidatePortal.Api.Controllers;
 
-[Authorize, Route("api/dashboard")]
+[Authorize(Roles = PortalRoles.Candidate), Route("api/dashboard")]
 public sealed class DashboardController(PortalDbContext database) : PortalControllerBase
 {
     [HttpGet]
@@ -28,7 +29,7 @@ public sealed class DashboardController(PortalDbContext database) : PortalContro
         var profileFields = new[]
         {
             user.FirstName, user.LastName, user.Email, user.Phone, user.Country,
-            user.City, user.Title, user.About, user.ResumeName ?? "",
+            user.Nationality, user.Gender, user.City, user.Title, user.About, user.ResumeName ?? "",
         };
         var profileComplete = (int)Math.Round(
             profileFields.Count(value => !string.IsNullOrWhiteSpace(value)) / (double)profileFields.Length * 100);

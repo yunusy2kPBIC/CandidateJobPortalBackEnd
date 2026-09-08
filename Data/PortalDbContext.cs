@@ -9,13 +9,17 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
+    public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
+    public DbSet<ExternalAuthCode> ExternalAuthCodes => Set<ExternalAuthCode>();
+    public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<LookupValue> LookupValues => Set<LookupValue>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        var timestampType = Database.IsSqlServer() ? "datetime2" : "timestamp without time zone";
+        const string timestampType = "datetime2";
 
         var user = modelBuilder.Entity<User>();
         user.ToTable("users").HasKey(x => x.Id);
@@ -28,11 +32,14 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
         user.Property(x => x.CountryCode).HasColumnName("country_code").HasMaxLength(32);
         user.Property(x => x.Phone).HasColumnName("phone").HasMaxLength(40);
         user.Property(x => x.Country).HasColumnName("country").HasMaxLength(100);
+        user.Property(x => x.Nationality).HasColumnName("nationality").HasMaxLength(50);
+        user.Property(x => x.Gender).HasColumnName("gender").HasMaxLength(20);
         user.Property(x => x.City).HasColumnName("city").HasMaxLength(100);
         user.Property(x => x.Title).HasColumnName("title").HasMaxLength(150);
         user.Property(x => x.About).HasColumnName("about");
         user.Property(x => x.Role).HasColumnName("role").HasMaxLength(30);
         user.HasIndex(x => x.Role);
+        user.Property(x => x.IsEmailVerified).HasColumnName("is_email_verified");
         user.Property(x => x.ResumeName).HasColumnName("resume_name").HasMaxLength(255);
         user.Property(x => x.ResumePath).HasColumnName("resume_path").HasMaxLength(500);
         user.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
@@ -77,6 +84,39 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
         session.Property(x => x.RevokedAt).HasColumnName("revoked_at").HasColumnType(timestampType);
         session.HasOne(x => x.User).WithMany(x => x.AuthSessions).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
 
+        var externalLogin = modelBuilder.Entity<ExternalLogin>();
+        externalLogin.ToTable("external_logins").HasKey(x => x.Id);
+        externalLogin.Property(x => x.Id).HasColumnName("id");
+        externalLogin.Property(x => x.UserId).HasColumnName("user_id");
+        externalLogin.Property(x => x.Provider).HasColumnName("provider").HasMaxLength(30);
+        externalLogin.Property(x => x.ProviderUserId).HasColumnName("provider_user_id").HasMaxLength(255);
+        externalLogin.Property(x => x.Email).HasColumnName("email").HasMaxLength(255);
+        externalLogin.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
+        externalLogin.HasIndex(x => new { x.Provider, x.ProviderUserId }).IsUnique().HasDatabaseName("uq_external_login");
+        externalLogin.HasOne(x => x.User).WithMany(x => x.ExternalLogins).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+
+        var externalAuthCode = modelBuilder.Entity<ExternalAuthCode>();
+        externalAuthCode.ToTable("external_auth_codes").HasKey(x => x.CodeHash);
+        externalAuthCode.Property(x => x.CodeHash).HasColumnName("code_hash").HasMaxLength(64);
+        externalAuthCode.Property(x => x.UserId).HasColumnName("user_id");
+        externalAuthCode.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
+        externalAuthCode.Property(x => x.ExpiresAt).HasColumnName("expires_at").HasColumnType(timestampType);
+        externalAuthCode.HasIndex(x => x.ExpiresAt);
+        externalAuthCode.HasOne(x => x.User).WithMany(x => x.ExternalAuthCodes).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+
+        var emailVerification = modelBuilder.Entity<EmailVerification>();
+        emailVerification.ToTable("email_verifications").HasKey(x => x.UserId);
+        emailVerification.Property(x => x.UserId).HasColumnName("user_id");
+        emailVerification.Property(x => x.CodeHash).HasColumnName("code_hash").HasMaxLength(64);
+        emailVerification.Property(x => x.AttemptCount).HasColumnName("attempt_count");
+        emailVerification.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
+        emailVerification.Property(x => x.ExpiresAt).HasColumnName("expires_at").HasColumnType(timestampType);
+        emailVerification.Property(x => x.ResendAvailableAt).HasColumnName("resend_available_at").HasColumnType(timestampType);
+        emailVerification.Property(x => x.ConsumedAt).HasColumnName("consumed_at").HasColumnType(timestampType);
+        emailVerification.HasIndex(x => x.ExpiresAt);
+        emailVerification.HasOne(x => x.User).WithOne(x => x.EmailVerification)
+            .HasForeignKey<EmailVerification>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+
         var notification = modelBuilder.Entity<Notification>();
         notification.ToTable("notifications").HasKey(x => x.Id);
         notification.Property(x => x.Id).HasColumnName("id");
@@ -111,5 +151,16 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
         auditLog.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
         auditLog.HasIndex(x => x.CreatedAt);
         auditLog.HasOne(x => x.AdminUser).WithMany().HasForeignKey(x => x.AdminUserId).OnDelete(DeleteBehavior.Restrict);
+
+        var lookup = modelBuilder.Entity<LookupValue>();
+        lookup.ToTable("lookup_values").HasKey(x => x.Id);
+        lookup.Property(x => x.Id).HasColumnName("id");
+        lookup.Property(x => x.Category).HasColumnName("category").HasMaxLength(50);
+        lookup.Property(x => x.Value).HasColumnName("value").HasMaxLength(150);
+        lookup.Property(x => x.ParentValue).HasColumnName("parent_value").HasMaxLength(150);
+        lookup.Property(x => x.SortOrder).HasColumnName("sort_order");
+        lookup.Property(x => x.IsActive).HasColumnName("is_active");
+        lookup.HasIndex(x => new { x.Category, x.Value, x.ParentValue }).IsUnique().HasDatabaseName("uq_lookup_value");
+        lookup.HasIndex(x => new { x.Category, x.IsActive, x.SortOrder }).HasDatabaseName("ix_lookup_category_active_order");
     }
 }

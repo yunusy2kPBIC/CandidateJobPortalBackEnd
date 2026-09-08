@@ -3,6 +3,7 @@ using CandidatePortal.Api.Contracts;
 using CandidatePortal.Api.Data;
 using CandidatePortal.Api.Infrastructure;
 using CandidatePortal.Api.Models;
+using CandidatePortal.Api.Security;
 using CandidatePortal.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -10,19 +11,20 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CandidatePortal.Api.Controllers;
 
-[Authorize(Roles = "admin"), Route("api/admin")]
+[Authorize(Roles = PortalRoles.RecruitmentAdministrators), Route("api/admin")]
 public sealed class AdminController(
     PortalDbContext database,
     PortalOptions options,
     SharePointSyncService sharePoint,
-    AuditLogService auditLogs) : PortalControllerBase
+    AuditLogService auditLogs,
+    MasterDataService masterData) : PortalControllerBase
 {
     [HttpGet("summary")]
     public async Task<ActionResult<AdminSummaryResponse>> Summary(CancellationToken cancellationToken)
     {
         var users = await database.Users.CountAsync(cancellationToken);
-        var candidates = await database.Users.CountAsync(value => value.Role == "candidate", cancellationToken);
-        var admins = await database.Users.CountAsync(value => value.Role == "admin", cancellationToken);
+        var candidates = await database.Users.CountAsync(value => value.Role == PortalRoles.Candidate, cancellationToken);
+        var admins = await database.Users.CountAsync(value => value.Role == PortalRoles.Administrator, cancellationToken);
         var today = PortalClock.UtcNow().Date;
         var openJobs = await database.Jobs.CountAsync(
             value => value.IsOpen && (value.ExpiresAt == null || value.ExpiresAt >= today), cancellationToken);
@@ -30,6 +32,7 @@ public sealed class AdminController(
         return new AdminSummaryResponse(users, candidates, admins, openJobs, applications);
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("audit-logs")]
     public async Task<ActionResult<IReadOnlyList<AdminAuditLogResponse>>> AuditLogs(
         CancellationToken cancellationToken)
@@ -65,37 +68,25 @@ public sealed class AdminController(
     [HttpGet("job-options")]
     public async Task<ActionResult<AdminJobOptionsResponse>> JobOptions(CancellationToken cancellationToken)
     {
-        var rows = await database.Jobs.AsNoTracking()
-            .Select(value => new
-            {
-                value.Country,
-                value.City,
-                value.Division,
-                value.JobFunction,
-                value.CareerLevel,
-            })
-            .ToListAsync(cancellationToken);
-
-        static IReadOnlyList<string> Values(IEnumerable<string> source) => source
-            .Select(value => value.Trim())
-            .Where(value => value.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .Order(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
+        var lookup = await masterData.GetOptionsAsync(cancellationToken);
+        var citiesByCountry = lookup.Countries.ToDictionary(
+            value => value.Name, value => value.Cities, StringComparer.OrdinalIgnoreCase);
         return new AdminJobOptionsResponse(
-            Values(rows.Select(value => value.Country)),
-            Values(rows.Select(value => value.City)),
-            Values(rows.Select(value => value.Division)),
-            Values(rows.Select(value => value.JobFunction)),
-            Values(rows.Select(value => value.CareerLevel)));
+            lookup.Countries.Select(value => value.Name).ToArray(),
+            lookup.Countries.SelectMany(value => value.Cities).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            citiesByCountry,
+            lookup.Divisions,
+            lookup.JobFunctions,
+            lookup.CareerLevels);
     }
 
     [HttpPost("jobs")]
     public async Task<ActionResult<JobResponse>> CreateJob(
         AdminJobCreateRequest payload, CancellationToken cancellationToken)
     {
-        ValidateJobChoices(payload.CareerLevel, payload.EmploymentType);
+        ValidateEmploymentType(payload.EmploymentType);
+        await masterData.ValidateJobAsync(payload.Country, payload.City, payload.Division,
+            payload.JobFunction, payload.CareerLevel, cancellationToken);
         var postedAt = PortalClock.UtcNow();
         var expiresAt = payload.ExpiresAt?.Date
             ?? throw new ApiException(400, "expires_at is required");
@@ -132,12 +123,17 @@ public sealed class AdminController(
     public async Task<ActionResult<JobResponse>> UpdateJob(
         int jobId, AdminJobUpdateRequest payload, CancellationToken cancellationToken)
     {
-        if (payload.CareerLevel is not null && !PortalValues.CareerLevels.Contains(payload.CareerLevel))
-            throw new ApiException(400, "career_level is invalid");
         if (payload.EmploymentType is not null && !PortalValues.EmploymentTypes.Contains(payload.EmploymentType))
             throw new ApiException(400, "employment_type is invalid");
         var job = await database.Jobs.FindAsync([jobId], cancellationToken)
             ?? throw new ApiException(404, "Job not found");
+        await masterData.ValidateJobAsync(
+            payload.Country ?? job.Country,
+            payload.City ?? job.City,
+            payload.Division ?? job.Division,
+            payload.JobFunction ?? job.JobFunction,
+            payload.CareerLevel ?? job.CareerLevel,
+            cancellationToken);
         if (payload.ExpiresAt is not null) ValidateExpiryDate(payload.ExpiresAt.Value.Date, job.PostedAt);
         var changedFields = JobChangedFields(job, payload);
 
@@ -168,6 +164,7 @@ public sealed class AdminController(
         return job.ToResponse();
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpDelete("jobs/{jobId:int}")]
     public async Task<ActionResult<MessageResponse>> DeleteJob(int jobId, CancellationToken cancellationToken)
     {
@@ -191,7 +188,7 @@ public sealed class AdminController(
         CancellationToken cancellationToken)
     {
         var rows = await database.Users.AsNoTracking()
-            .Where(value => value.Role == "candidate")
+            .Where(value => value.Role == PortalRoles.Candidate)
             .OrderByDescending(value => value.CreatedAt)
             .ThenByDescending(value => value.Id)
             .Select(value => new { User = value, ApplicationCount = value.Applications.Count })
@@ -204,7 +201,7 @@ public sealed class AdminController(
     {
         var candidate = await database.Users.AsNoTracking()
             .SingleOrDefaultAsync(value => value.Id == candidateId, cancellationToken);
-        if (candidate is null || candidate.Role != "candidate" || string.IsNullOrWhiteSpace(candidate.ResumePath))
+        if (candidate is null || candidate.Role != PortalRoles.Candidate || string.IsNullOrWhiteSpace(candidate.ResumePath))
             throw new ApiException(404, "Candidate CV not found");
         if (Uri.TryCreate(candidate.ResumePath, UriKind.Absolute, out var uri) &&
             (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
@@ -275,8 +272,8 @@ public sealed class AdminController(
     }
 
     private AdminCandidateResponse CandidateResponse(User user, int applicationCount) => new(
-        user.Id, user.Email, user.FirstName, user.LastName, user.Phone, user.Country, user.City,
-        user.Title, user.ResumeName, CandidateResumeUrl(user), applicationCount, user.CreatedAt);
+        user.Id, user.Email, user.FirstName, user.LastName, user.Phone, user.Country, user.Nationality, user.Gender,
+        user.City, user.Title, user.ResumeName, CandidateResumeUrl(user), applicationCount, user.CreatedAt);
 
     private string? CandidateResumeUrl(User user)
     {
@@ -292,10 +289,8 @@ public sealed class AdminController(
         application.Id, $"APP-{application.Id:0000}", application.Status, application.AppliedAt,
         CandidateResponse(application.User, application.User.Applications.Count), application.Job.ToResponse());
 
-    private static void ValidateJobChoices(string careerLevel, string employmentType)
+    private static void ValidateEmploymentType(string employmentType)
     {
-        if (!PortalValues.CareerLevels.Contains(careerLevel))
-            throw new ApiException(400, "career_level is invalid");
         if (!PortalValues.EmploymentTypes.Contains(employmentType))
             throw new ApiException(400, "employment_type is invalid");
     }

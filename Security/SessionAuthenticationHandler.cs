@@ -71,6 +71,6 @@ public sealed class SessionAuthenticationHandler(
     {
         Response.StatusCode = StatusCodes.Status403Forbidden;
         Response.ContentType = "application/json";
-        await Response.WriteAsync(JsonSerializer.Serialize(new { detail = "Administrator access required" }));
+        await Response.WriteAsync(JsonSerializer.Serialize(new { detail = "You do not have permission to access this resource" }));
     }
 }

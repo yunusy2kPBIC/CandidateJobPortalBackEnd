@@ -2,6 +2,7 @@ using CandidatePortal.Api.Configuration;
 using CandidatePortal.Api.Contracts;
 using CandidatePortal.Api.Data;
 using CandidatePortal.Api.Infrastructure;
+using CandidatePortal.Api.Security;
 using CandidatePortal.Api.Services;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
@@ -11,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CandidatePortal.Api.Controllers;
 
-[Authorize(Roles = "admin"), Route("api/sharepoint")]
+[Authorize(Roles = PortalRoles.RecruitmentAdministrators), Route("api/sharepoint")]
 public sealed class SharePointController(
     ISharePointClient client,
     SharePointSyncService synchronization,
@@ -19,17 +20,21 @@ public sealed class SharePointController(
     PortalOptions options,
     AuditLogService auditLogs) : PortalControllerBase
 {
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("status")]
     public object Status() => client.ConfigurationStatus();
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("diagnostics")]
     public Task<object> Diagnostics(CancellationToken cancellationToken) =>
         client.DiagnosticsAsync(cancellationToken);
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("lists")]
     public Task<IReadOnlyList<SharePointListResponse>> Lists(CancellationToken cancellationToken) =>
         client.ListListsAsync(cancellationToken);
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpPost("setup")]
     public async Task<SharePointSetupResponse> Setup(CancellationToken cancellationToken)
     {
@@ -39,6 +44,7 @@ public sealed class SharePointController(
         return result;
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpPost("sync")]
     public async Task<ActionResult<SharePointSyncResponse>> Sync(CancellationToken cancellationToken)
     {
@@ -46,7 +52,7 @@ public sealed class SharePointController(
             throw new ApiException(409, "Portal SharePoint synchronization is disabled");
 
         await client.ProvisionAsync(cancellationToken);
-        var candidates = await database.Users.Where(value => value.Role == "candidate")
+        var candidates = await database.Users.Where(value => value.Role == PortalRoles.Candidate)
             .OrderBy(value => value.Id).ToListAsync(cancellationToken);
         var jobs = await database.Jobs.OrderBy(value => value.Id).ToListAsync(cancellationToken);
         var applications = await database.Applications
@@ -81,10 +87,12 @@ public sealed class SharePointController(
             applications.Count, uploadedResumes);
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("candidates")]
     public Task<IReadOnlyList<SharePointItemResponse>> Candidates(CancellationToken cancellationToken) =>
         client.ListItemsAsync(options.SharePointCandidatesList, cancellationToken);
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpPost("candidates")]
     public async Task<ActionResult<SharePointItemResponse>> CreateCandidate(
         SharePointCandidateCreateRequest payload, CancellationToken cancellationToken)
@@ -97,10 +105,12 @@ public sealed class SharePointController(
         return StatusCode(StatusCodes.Status201Created, created);
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("candidates/{itemId:int}")]
     public Task<SharePointItemResponse> Candidate(int itemId, CancellationToken cancellationToken) =>
         client.GetItemAsync(options.SharePointCandidatesList, itemId, cancellationToken);
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpPatch("candidates/{itemId:int}")]
     public async Task<SharePointItemResponse> UpdateCandidate(
         int itemId, SharePointCandidateUpdateRequest payload, CancellationToken cancellationToken)
@@ -112,15 +122,18 @@ public sealed class SharePointController(
         return updated;
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpDelete("candidates/{itemId:int}")]
     public Task<ActionResult<MessageResponse>> DeleteCandidate(int itemId, CancellationToken cancellationToken) =>
         DeleteItem(options.SharePointCandidatesList, itemId, "SharePoint candidate",
             "SharePoint item deleted successfully", cancellationToken);
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("jobs")]
     public Task<IReadOnlyList<SharePointItemResponse>> Jobs(CancellationToken cancellationToken) =>
         client.ListItemsAsync(options.SharePointJobsList, cancellationToken);
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpPost("jobs")]
     public async Task<ActionResult<SharePointItemResponse>> CreateJob(
         SharePointJobCreateRequest payload, CancellationToken cancellationToken)
@@ -132,10 +145,12 @@ public sealed class SharePointController(
         return StatusCode(StatusCodes.Status201Created, created);
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("jobs/{itemId:int}")]
     public Task<SharePointItemResponse> Job(int itemId, CancellationToken cancellationToken) =>
         client.GetItemAsync(options.SharePointJobsList, itemId, cancellationToken);
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpPatch("jobs/{itemId:int}")]
     public async Task<SharePointItemResponse> UpdateJob(
         int itemId, SharePointJobUpdateRequest payload, CancellationToken cancellationToken)
@@ -150,15 +165,18 @@ public sealed class SharePointController(
         return updated;
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpDelete("jobs/{itemId:int}")]
     public Task<ActionResult<MessageResponse>> DeleteJob(int itemId, CancellationToken cancellationToken) =>
         DeleteItem(options.SharePointJobsList, itemId, "SharePoint job",
             "SharePoint item deleted successfully", cancellationToken);
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("applications")]
     public Task<IReadOnlyList<SharePointItemResponse>> Applications(CancellationToken cancellationToken) =>
         client.ListItemsAsync(options.SharePointApplicationsList, cancellationToken);
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpPost("applications")]
     public async Task<ActionResult<SharePointItemResponse>> CreateApplication(
         SharePointApplicationCreateRequest payload, CancellationToken cancellationToken)
@@ -171,10 +189,12 @@ public sealed class SharePointController(
         return StatusCode(StatusCodes.Status201Created, created);
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("applications/{itemId:int}")]
     public Task<SharePointItemResponse> Application(int itemId, CancellationToken cancellationToken) =>
         client.GetItemAsync(options.SharePointApplicationsList, itemId, cancellationToken);
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpPatch("applications/{itemId:int}")]
     public async Task<SharePointItemResponse> UpdateApplication(
         int itemId, SharePointApplicationUpdateRequest payload, CancellationToken cancellationToken)
@@ -187,6 +207,7 @@ public sealed class SharePointController(
         return updated;
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpDelete("applications/{itemId:int}")]
     public Task<ActionResult<MessageResponse>> DeleteApplication(int itemId, CancellationToken cancellationToken) =>
         DeleteItem(options.SharePointApplicationsList, itemId, "SharePoint application",
@@ -376,10 +397,12 @@ public sealed class SharePointController(
         return new MessageResponse("Cooperative training request deleted successfully");
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("resumes")]
     public Task<IReadOnlyList<SharePointItemResponse>> Resumes(CancellationToken cancellationToken) =>
         client.ListItemsAsync(options.SharePointResumesLibrary, cancellationToken);
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpPost("resumes")]
     [RequestSizeLimit(5 * 1024 * 1024 + 64 * 1024)]
     public async Task<ActionResult<SharePointItemResponse>> UploadResume(
@@ -401,6 +424,7 @@ public sealed class SharePointController(
         return StatusCode(StatusCodes.Status201Created, uploaded);
     }
 
+    [Authorize(Roles = PortalRoles.Administrator)]
     [HttpDelete("resumes/{itemId:int}")]
     public Task<ActionResult<MessageResponse>> DeleteResume(int itemId, CancellationToken cancellationToken) =>
         DeleteItem(options.SharePointResumesLibrary, itemId, "SharePoint resume",
@@ -417,8 +441,8 @@ public sealed class SharePointController(
 
     private static void ValidateCandidateRole(string role)
     {
-        if (role is not ("Candidate" or "Admin"))
-            throw new ApiException(400, "role must be Candidate or Admin");
+        if (role is not ("Candidate" or "Student" or "Admin" or "HR Admin"))
+            throw new ApiException(400, "role must be Candidate, Student, HR Admin, or Admin");
     }
 
     private static void ValidateJobChoices(string careerLevel, string employmentType)

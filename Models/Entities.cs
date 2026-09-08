@@ -15,15 +15,21 @@ public sealed class User
     public string CountryCode { get; set; } = "+966";
     public string Phone { get; set; } = "";
     public string Country { get; set; } = "Saudi Arabia";
+    public string Nationality { get; set; } = "";
+    public string Gender { get; set; } = "";
     public string City { get; set; } = "Riyadh";
     public string Title { get; set; } = "Candidate";
     public string About { get; set; } = "";
     public string Role { get; set; } = "candidate";
+    public bool IsEmailVerified { get; set; } = true;
     public string? ResumeName { get; set; }
     public string? ResumePath { get; set; }
     public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
     public List<Application> Applications { get; set; } = [];
     public List<AuthSession> AuthSessions { get; set; } = [];
+    public List<ExternalLogin> ExternalLogins { get; set; } = [];
+    public List<ExternalAuthCode> ExternalAuthCodes { get; set; } = [];
+    public EmailVerification? EmailVerification { get; set; }
     public List<Notification> Notifications { get; set; } = [];
     public UserPreference? Preferences { get; set; }
     public string FullName => $"{FirstName} {LastName}".Trim();
@@ -82,6 +88,38 @@ public sealed class AuthSession
     public User User { get; set; } = null!;
 }
 
+public sealed class ExternalLogin
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string Provider { get; set; } = "";
+    public string ProviderUserId { get; set; } = "";
+    public string Email { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
+    public User User { get; set; } = null!;
+}
+
+public sealed class ExternalAuthCode
+{
+    public string CodeHash { get; set; } = "";
+    public int UserId { get; set; }
+    public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
+    public DateTime ExpiresAt { get; set; }
+    public User User { get; set; } = null!;
+}
+
+public sealed class EmailVerification
+{
+    public int UserId { get; set; }
+    public string CodeHash { get; set; } = "";
+    public int AttemptCount { get; set; }
+    public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
+    public DateTime ExpiresAt { get; set; }
+    public DateTime ResendAvailableAt { get; set; }
+    public DateTime? ConsumedAt { get; set; }
+    public User User { get; set; } = null!;
+}
+
 public sealed class Notification
 {
     public int Id { get; set; }
@@ -105,4 +143,23 @@ public sealed class UserPreference
     public string Theme { get; set; } = "light";
     public DateTime UpdatedAt { get; set; } = PortalClock.UtcNow();
     public User User { get; set; } = null!;
+}
+
+public static class LookupCategories
+{
+    public const string Country = "country";
+    public const string City = "city";
+    public const string Division = "division";
+    public const string JobFunction = "job_function";
+    public const string CareerLevel = "career_level";
+}
+
+public sealed class LookupValue
+{
+    public int Id { get; set; }
+    public string Category { get; set; } = "";
+    public string Value { get; set; } = "";
+    public string? ParentValue { get; set; }
+    public int SortOrder { get; set; }
+    public bool IsActive { get; set; } = true;
 }

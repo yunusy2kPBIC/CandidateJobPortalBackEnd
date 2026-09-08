@@ -131,7 +131,7 @@ public sealed class CooperativeTrainingCreateRequest : IValidatableObject
     [Required, MinLength(7), MaxLength(40)] public string MobileNumber { get; init; } = "";
     [Required, EmailAddress, MaxLength(255)] public string Email { get; init; } = "";
     [Required] public string Gender { get; init; } = "";
-    [Range(1, 24)] public int TrainingDuration { get; init; }
+    [Range(3, 6)] public int TrainingDuration { get; init; }
     [Required] public string Semester { get; init; } = "";
     public DateOnly TrainingStartingDate { get; init; }
     [Required, MinLength(1), MaxLength(180)] public string TrainingSupervisorName { get; init; } = "";
@@ -187,7 +187,7 @@ public sealed class CooperativeTrainingUpdateRequest
     [MinLength(7), MaxLength(40)] public string? MobileNumber { get; init; }
     [EmailAddress, MaxLength(255)] public string? Email { get; init; }
     public string? Gender { get; init; }
-    [Range(1, 24)] public int? TrainingDuration { get; init; }
+    [Range(3, 6)] public int? TrainingDuration { get; init; }
     public string? Semester { get; init; }
     public DateOnly? TrainingStartingDate { get; init; }
     [MinLength(1), MaxLength(180)] public string? TrainingSupervisorName { get; init; }
@@ -292,6 +292,8 @@ public sealed record CooperativeTrainingResponse(
         SharePointResponseFields.NullableText(item, "University Request URL", "UniversityRequestUrl"),
         SharePointResponseFields.NullableText(item, "University Request File Name", "UniversityRequestFileName"));
 }
+
+public sealed record StudentCooperativeTrainingStatusResponse(CooperativeTrainingResponse? Request);
 
 internal static class SharePointRequestValidation
 {

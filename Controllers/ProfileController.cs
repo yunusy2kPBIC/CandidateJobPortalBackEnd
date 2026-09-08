@@ -1,6 +1,7 @@
 using CandidatePortal.Api.Contracts;
 using CandidatePortal.Api.Data;
 using CandidatePortal.Api.Infrastructure;
+using CandidatePortal.Api.Security;
 using CandidatePortal.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +13,8 @@ namespace CandidatePortal.Api.Controllers;
 public sealed class ProfileController(
     PortalDbContext database,
     SharePointSyncService sharePoint,
-    DocumentStorage storage) : PortalControllerBase
+    DocumentStorage storage,
+    MasterDataService masterData) : PortalControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<UserResponse>> Get(CancellationToken cancellationToken)
@@ -27,9 +29,19 @@ public sealed class ProfileController(
     {
         var user = await database.Users.FindAsync([CurrentUserId], cancellationToken)
             ?? throw new ApiException(401, "Invalid or expired token");
+        var nationality = payload.Nationality.Trim();
+        if (user.Role == PortalRoles.Candidate && !PortalValues.Nationalities.Contains(nationality))
+            throw new ApiException(400, "Select a valid nationality");
+        var gender = payload.Gender.Trim();
+        if (user.Role is PortalRoles.Candidate or PortalRoles.Student && !PortalValues.Genders.Contains(gender))
+            throw new ApiException(400, "Select a valid gender");
+        if (string.IsNullOrWhiteSpace(payload.City))
+            await masterData.ValidateCountryAsync(payload.Country, cancellationToken);
+        else
+            await masterData.ValidateCountryCityAsync(payload.Country, payload.City, cancellationToken);
         user.FirstName = payload.FirstName.Trim(); user.LastName = payload.LastName.Trim();
         user.CountryCode = payload.CountryCode.Trim(); user.Phone = payload.Phone.Trim(); user.Country = payload.Country.Trim();
-        user.City = payload.City.Trim(); user.Title = payload.Title.Trim(); user.About = payload.About.Trim();
+        user.Nationality = nationality; user.Gender = gender; user.City = payload.City.Trim(); user.Title = payload.Title.Trim(); user.About = payload.About.Trim();
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         await database.SaveChangesAsync(cancellationToken);
         await sharePoint.SyncCandidateAsync(user, cancellationToken);
@@ -43,7 +55,7 @@ public sealed class ProfileController(
     {
         var user = await database.Users.FindAsync([CurrentUserId], cancellationToken)
             ?? throw new ApiException(401, "Invalid or expired token");
-        if (user.Role != "candidate") throw new ApiException(403, "Only candidate accounts can upload resumes");
+        if (user.Role != PortalRoles.Candidate) throw new ApiException(403, "Only candidate accounts can upload resumes");
         var extension = Path.GetExtension(resume.FileName).ToLowerInvariant();
         if (extension is not (".pdf" or ".doc" or ".docx")) throw new ApiException(400, "Upload a PDF, DOC or DOCX resume");
         if (resume.Length > 5 * 1024 * 1024) throw new ApiException(400, "Resume must be smaller than 5 MB");

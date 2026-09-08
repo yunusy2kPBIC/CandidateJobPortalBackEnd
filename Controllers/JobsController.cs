@@ -2,6 +2,7 @@ using CandidatePortal.Api.Contracts;
 using CandidatePortal.Api.Data;
 using CandidatePortal.Api.Infrastructure;
 using CandidatePortal.Api.Models;
+using CandidatePortal.Api.Security;
 using CandidatePortal.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -12,7 +13,8 @@ namespace CandidatePortal.Api.Controllers;
 [Route("api")]
 public sealed class JobsController(
     PortalDbContext database,
-    SharePointSyncService sharePoint) : PortalControllerBase
+    SharePointSyncService sharePoint,
+    MasterDataService masterData) : PortalControllerBase
 {
     [AllowAnonymous, HttpGet("jobs")]
     public async Task<ActionResult<JobListResponse>> ListJobs(
@@ -44,15 +46,14 @@ public sealed class JobsController(
             _ => query.OrderByDescending(job => job.PostedAt),
         };
         var jobs = await query.Select(job => job.ToResponse()).ToListAsync(cancellationToken);
-        var openJobs = database.Jobs.AsNoTracking()
-            .Where(job => job.IsOpen && (job.ExpiresAt == null || job.ExpiresAt >= today));
+        var options = await masterData.GetOptionsAsync(cancellationToken);
         var filters = new Dictionary<string, IReadOnlyList<string>>
         {
-            ["countries"] = await openJobs.Select(job => job.Country).Distinct().Order().ToListAsync(cancellationToken),
-            ["cities"] = await openJobs.Select(job => job.City).Distinct().Order().ToListAsync(cancellationToken),
-            ["divisions"] = await openJobs.Select(job => job.Division).Distinct().Order().ToListAsync(cancellationToken),
-            ["job_functions"] = await openJobs.Select(job => job.JobFunction).Distinct().Order().ToListAsync(cancellationToken),
-            ["career_levels"] = await openJobs.Select(job => job.CareerLevel).Distinct().Order().ToListAsync(cancellationToken),
+            ["countries"] = options.Countries.Select(value => value.Name).ToArray(),
+            ["cities"] = options.Countries.SelectMany(value => value.Cities).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+            ["divisions"] = options.Divisions,
+            ["job_functions"] = options.JobFunctions,
+            ["career_levels"] = options.CareerLevels,
         };
         return new JobListResponse(jobs, jobs.Count, filters);
     }
@@ -68,12 +69,18 @@ public sealed class JobsController(
         return job.ToResponse();
     }
 
-    [Authorize, HttpPost("jobs/{jobId:int}/apply")]
+    [Authorize(Roles = PortalRoles.Candidate), HttpPost("jobs/{jobId:int}/apply")]
     public async Task<ActionResult<MessageResponse>> Apply(int jobId, CancellationToken cancellationToken)
     {
         var user = await database.Users.FindAsync([CurrentUserId], cancellationToken)
             ?? throw new ApiException(401, "Invalid or expired token");
-        if (user.Role != "candidate") throw new ApiException(403, "Only candidate accounts can apply for jobs");
+        if (user.Role != PortalRoles.Candidate) throw new ApiException(403, "Only candidate accounts can apply for jobs");
+        if (!PortalValues.Nationalities.Contains(user.Nationality))
+            throw new ApiException(400, "Complete your profile and select your nationality before applying");
+        if (!PortalValues.Genders.Contains(user.Gender))
+            throw new ApiException(400, "Complete your profile and select your gender before applying");
+        if (string.IsNullOrWhiteSpace(user.ResumeName) || string.IsNullOrWhiteSpace(user.ResumePath))
+            throw new ApiException(400, "Upload your resume before applying for a job");
         var job = await database.Jobs.FindAsync([jobId], cancellationToken);
         if (job is null || !job.IsOpen || (job.ExpiresAt is not null && job.ExpiresAt.Value.Date < PortalClock.UtcNow().Date))
             throw new ApiException(404, "This job is no longer available");
@@ -105,7 +112,7 @@ public sealed class JobsController(
         return StatusCode(201, new MessageResponse("Application submitted successfully"));
     }
 
-    [Authorize, HttpGet("applications")]
+    [Authorize(Roles = PortalRoles.Candidate), HttpGet("applications")]
     public async Task<ActionResult<IReadOnlyList<ApplicationResponse>>> Applications(CancellationToken cancellationToken)
     {
         var applications = await database.Applications.AsNoTracking().Include(value => value.Job)

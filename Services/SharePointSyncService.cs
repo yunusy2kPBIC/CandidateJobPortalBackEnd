@@ -2,6 +2,7 @@ using CandidatePortal.Api.Configuration;
 using CandidatePortal.Api.Contracts;
 using CandidatePortal.Api.Infrastructure;
 using CandidatePortal.Api.Models;
+using CandidatePortal.Api.Security;
 
 namespace CandidatePortal.Api.Services;
 
@@ -80,10 +81,12 @@ public sealed class SharePointSyncService(ISharePointClient client, PortalOption
         ["CountryCode"] = user.CountryCode.Trim(),
         ["Phone"] = user.Phone.Trim(),
         ["Country"] = user.Country.Trim(),
+        ["Nationality"] = user.Nationality.Trim(),
+        ["Gender"] = user.Gender.Trim(),
         ["City"] = user.City.Trim(),
         ["ProfessionalTitle"] = user.Title.Trim(),
         ["About"] = user.About.Trim(),
-        ["Role"] = user.Role == "admin" ? "Admin" : "Candidate",
+        ["Role"] = PortalRoles.SharePointName(user.Role),
         ["ResumeUrl"] = user.ResumePath?.StartsWith("https://", StringComparison.OrdinalIgnoreCase) == true ? user.ResumePath : null,
     };
 
