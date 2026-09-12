@@ -155,6 +155,45 @@ public sealed class DatabaseBootstrapper(
             END
             """,
             cancellationToken);
+        await database.Database.ExecuteSqlRawAsync(
+            """
+            IF OBJECT_ID(N'password_resets', N'U') IS NULL
+            BEGIN
+                CREATE TABLE password_resets (
+                    user_id int NOT NULL CONSTRAINT PK_password_resets PRIMARY KEY,
+                    code_hash nvarchar(64) NOT NULL,
+                    attempt_count int NOT NULL CONSTRAINT DF_password_resets_attempt_count DEFAULT 0,
+                    created_at datetime2 NOT NULL,
+                    expires_at datetime2 NOT NULL,
+                    resend_available_at datetime2 NOT NULL,
+                    consumed_at datetime2 NULL,
+                    CONSTRAINT FK_password_resets_users_user_id
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IX_password_resets_expires_at ON password_resets(expires_at);
+            END
+            """,
+            cancellationToken);
+        await database.Database.ExecuteSqlRawAsync(
+            """
+            IF OBJECT_ID(N'user_consents', N'U') IS NULL
+            BEGIN
+                CREATE TABLE user_consents (
+                    id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_user_consents PRIMARY KEY,
+                    user_id int NOT NULL,
+                    document_type nvarchar(50) NOT NULL,
+                    document_version nvarchar(50) NOT NULL,
+                    accepted_at datetime2 NOT NULL,
+                    ip_address nvarchar(64) NOT NULL,
+                    user_agent nvarchar(500) NOT NULL,
+                    CONSTRAINT FK_user_consents_users_user_id
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    CONSTRAINT uq_user_consent_document_version
+                        UNIQUE (user_id, document_type, document_version)
+                );
+            END
+            """,
+            cancellationToken);
     }
 
     private async Task EnsureLookupDataAsync(CancellationToken cancellationToken)

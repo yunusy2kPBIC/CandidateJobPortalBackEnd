@@ -30,6 +30,8 @@ public sealed class User
     public List<ExternalLogin> ExternalLogins { get; set; } = [];
     public List<ExternalAuthCode> ExternalAuthCodes { get; set; } = [];
     public EmailVerification? EmailVerification { get; set; }
+    public PasswordReset? PasswordReset { get; set; }
+    public List<UserConsent> Consents { get; set; } = [];
     public List<Notification> Notifications { get; set; } = [];
     public UserPreference? Preferences { get; set; }
     public string FullName => $"{FirstName} {LastName}".Trim();
@@ -117,6 +119,30 @@ public sealed class EmailVerification
     public DateTime ExpiresAt { get; set; }
     public DateTime ResendAvailableAt { get; set; }
     public DateTime? ConsumedAt { get; set; }
+    public User User { get; set; } = null!;
+}
+
+public sealed class PasswordReset
+{
+    public int UserId { get; set; }
+    public string CodeHash { get; set; } = "";
+    public int AttemptCount { get; set; }
+    public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
+    public DateTime ExpiresAt { get; set; }
+    public DateTime ResendAvailableAt { get; set; }
+    public DateTime? ConsumedAt { get; set; }
+    public User User { get; set; } = null!;
+}
+
+public sealed class UserConsent
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public string DocumentType { get; set; } = "privacy_notice";
+    public string DocumentVersion { get; set; } = "";
+    public DateTime AcceptedAt { get; set; } = PortalClock.UtcNow();
+    public string IpAddress { get; set; } = "";
+    public string UserAgent { get; set; } = "";
     public User User { get; set; } = null!;
 }
 

@@ -16,7 +16,11 @@ dotnet run
 
 The API reads `backend-dotnet/.env`, then process environment variables. Configure SQL Server with `SQLSERVER_CONNECTION_STRING`; `Integrated Security=True` uses the identity running the API.
 
-New account email verification defaults to development delivery. The API generates a six-digit code, logs a simulated message from `dev-no-reply@candidateportal.local`, and returns the code to the local verification screen. Configure the timing with `EMAIL_VERIFICATION_MINUTES` and `EMAIL_VERIFICATION_RESEND_SECONDS`; no mailbox or external email provider is needed in this mode.
+New account email verification defaults to development delivery. The API generates a six-digit code, logs a simulated message from `dev-no-reply@candidateportal.local`, and returns the code to the local verification screen. After verification commits, it logs a second account-created confirmation with the appropriate Candidate or Student next step. Configure the timing with `EMAIL_VERIFICATION_MINUTES` and `EMAIL_VERIFICATION_RESEND_SECONDS`; no mailbox or external email provider is needed in this mode.
+
+Password recovery uses the same development sender. A six-digit reset code expires after `PASSWORD_RESET_MINUTES`, can be regenerated after `PASSWORD_RESET_RESEND_SECONDS`, and is limited by `PASSWORD_RESET_MAX_ATTEMPTS`. A successful reset consumes the code, revokes the user's active sessions, and logs a password-changed confirmation.
+
+The public privacy notice is versioned with `PRIVACY_POLICY_VERSION`, `PRIVACY_EFFECTIVE_DATE`, and `PRIVACY_CONTACT_EMAIL`. Registration must submit the current version and acceptance flag. The API stores the accepted version, UTC timestamp, IP address, and user agent in `user_consents`; `GET /api/privacy/consent` returns the authenticated user's latest evidence.
 
 To initialize and seed a new development database without starting the web host:
 

@@ -12,6 +12,8 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
     public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
     public DbSet<ExternalAuthCode> ExternalAuthCodes => Set<ExternalAuthCode>();
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
+    public DbSet<PasswordReset> PasswordResets => Set<PasswordReset>();
+    public DbSet<UserConsent> UserConsents => Set<UserConsent>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
@@ -116,6 +118,33 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
         emailVerification.HasIndex(x => x.ExpiresAt);
         emailVerification.HasOne(x => x.User).WithOne(x => x.EmailVerification)
             .HasForeignKey<EmailVerification>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+
+        var passwordReset = modelBuilder.Entity<PasswordReset>();
+        passwordReset.ToTable("password_resets").HasKey(x => x.UserId);
+        passwordReset.Property(x => x.UserId).HasColumnName("user_id");
+        passwordReset.Property(x => x.CodeHash).HasColumnName("code_hash").HasMaxLength(64);
+        passwordReset.Property(x => x.AttemptCount).HasColumnName("attempt_count");
+        passwordReset.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
+        passwordReset.Property(x => x.ExpiresAt).HasColumnName("expires_at").HasColumnType(timestampType);
+        passwordReset.Property(x => x.ResendAvailableAt).HasColumnName("resend_available_at").HasColumnType(timestampType);
+        passwordReset.Property(x => x.ConsumedAt).HasColumnName("consumed_at").HasColumnType(timestampType);
+        passwordReset.HasIndex(x => x.ExpiresAt);
+        passwordReset.HasOne(x => x.User).WithOne(x => x.PasswordReset)
+            .HasForeignKey<PasswordReset>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+
+        var userConsent = modelBuilder.Entity<UserConsent>();
+        userConsent.ToTable("user_consents").HasKey(x => x.Id);
+        userConsent.Property(x => x.Id).HasColumnName("id");
+        userConsent.Property(x => x.UserId).HasColumnName("user_id");
+        userConsent.Property(x => x.DocumentType).HasColumnName("document_type").HasMaxLength(50);
+        userConsent.Property(x => x.DocumentVersion).HasColumnName("document_version").HasMaxLength(50);
+        userConsent.Property(x => x.AcceptedAt).HasColumnName("accepted_at").HasColumnType(timestampType);
+        userConsent.Property(x => x.IpAddress).HasColumnName("ip_address").HasMaxLength(64);
+        userConsent.Property(x => x.UserAgent).HasColumnName("user_agent").HasMaxLength(500);
+        userConsent.HasIndex(x => new { x.UserId, x.DocumentType, x.DocumentVersion }).IsUnique()
+            .HasDatabaseName("uq_user_consent_document_version");
+        userConsent.HasOne(x => x.User).WithMany(x => x.Consents)
+            .HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
 
         var notification = modelBuilder.Entity<Notification>();
         notification.ToTable("notifications").HasKey(x => x.Id);

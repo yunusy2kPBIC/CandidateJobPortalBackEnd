@@ -35,6 +35,8 @@ builder.Services.AddScoped<SharePointSyncService>();
 builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<MasterDataService>();
 builder.Services.AddScoped<VerificationEmailService>();
+builder.Services.AddScoped<PasswordRecoveryService>();
+builder.Services.AddSingleton<PrivacyNoticeService>();
 builder.Services.AddScoped<CooperativeTrainingSubmissionService>();
 builder.Services.AddHttpClient<ISharePointClient, GraphSharePointClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(portalOptions.SharePointTimeoutSeconds));
@@ -117,6 +119,16 @@ builder.Services.AddRateLimiter(options =>
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            }));
+    options.AddPolicy("password-recovery", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 8,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
                 AutoReplenishment = true,

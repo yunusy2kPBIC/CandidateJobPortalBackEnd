@@ -29,6 +29,42 @@ public sealed record RegistrationPendingResponse(
     DateTime ResendAvailableAt,
     string? DevVerificationCode);
 
+public sealed class PasswordRecoveryRequest
+{
+    [Required, EmailAddress, MaxLength(255)] public string Email { get; init; } = "";
+}
+
+public sealed class PasswordResetRequest
+{
+    [Required, EmailAddress, MaxLength(255)] public string Email { get; init; } = "";
+    [Required, RegularExpression(@"^\d{6}$")] public string Code { get; init; } = "";
+    [Required, MinLength(8), MaxLength(128)] public string NewPassword { get; init; } = "";
+    [Required] public string ConfirmPassword { get; init; } = "";
+}
+
+public sealed record PasswordRecoveryPendingResponse(
+    string Message,
+    string Email,
+    DateTime ExpiresAt,
+    DateTime ResendAvailableAt,
+    string? DevResetCode);
+
+public sealed record PrivacySectionResponse(string Title, string Content);
+
+public sealed record PrivacyNoticeResponse(
+    string Title,
+    string Version,
+    string EffectiveDate,
+    string ContactEmail,
+    IReadOnlyList<PrivacySectionResponse> Sections);
+
+public sealed record ConsentEvidenceResponse(
+    string DocumentType,
+    string DocumentVersion,
+    DateTime AcceptedAt,
+    string IpAddress,
+    string UserAgent);
+
 public sealed class RegisterRequest
 {
     [Required, EmailAddress, MaxLength(255)] public string Email { get; init; } = "";
@@ -44,6 +80,7 @@ public sealed class RegisterRequest
     [Required, MaxLength(20)] public string Gender { get; init; } = "";
     public bool IsStudent { get; init; }
     public bool AcceptedTerms { get; init; }
+    [Required, MaxLength(50)] public string PrivacyVersion { get; init; } = "";
 }
 
 public sealed class LoginRequest
