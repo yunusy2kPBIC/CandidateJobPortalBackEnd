@@ -24,8 +24,10 @@ public sealed class DashboardController(PortalDbContext database) : PortalContro
             value => value.UserId == user.Id &&
                 (value.Status == "Interview" || value.Status == "Shortlisted"), cancellationToken);
         var today = PortalClock.UtcNow().Date;
+        var tomorrow = today.AddDays(1);
         var openJobs = await database.Jobs.CountAsync(
-            value => value.IsOpen && (value.ExpiresAt == null || value.ExpiresAt >= today), cancellationToken);
+            value => value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
+                (value.ExpiresAt == null || value.ExpiresAt >= today), cancellationToken);
         var profileFields = new[]
         {
             user.FirstName, user.LastName, user.Email, user.Phone, user.Country,

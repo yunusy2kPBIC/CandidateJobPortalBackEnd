@@ -10,9 +10,9 @@ public sealed class RecruitmentRequestCreate : IValidatableObject
     [Required, MinLength(1), MaxLength(100)] public string Nationality { get; init; } = "";
     [Required] public string Gender { get; init; } = "";
     [Required] public string DriverLicenseType { get; init; } = "";
-    [Required, MinLength(7), MaxLength(40)] public string MobileNumber { get; init; } = "";
+    [Required, MinLength(9), MaxLength(20)] public string MobileNumber { get; init; } = "";
     [Required, EmailAddress, MaxLength(255)] public string EmailAddress { get; init; } = "";
-    [Required, MinLength(7), MaxLength(20)] public string IqamaNumber { get; init; } = "";
+    [Required, MinLength(10), MaxLength(10)] public string IqamaNumber { get; init; } = "";
     [Required, MinLength(1), MaxLength(150)] public string IqamaProfession { get; init; } = "";
     [MaxLength(180)] public string CurrentEmployer { get; init; } = "Not currently employed";
     public DateOnly DateOfBirth { get; init; }
@@ -34,7 +34,7 @@ public sealed class RecruitmentRequestCreate : IValidatableObject
         ["Nationality"] = Nationality.Trim(),
         ["Gender"] = Gender,
         ["DriverLicenseType"] = DriverLicenseType,
-        ["MobileNumber"] = MobileNumber.Trim(),
+        ["MobileNumber"] = SharePointRequestValidation.NormalizeSaudiMobile(MobileNumber),
         ["EmailAddress"] = EmailAddress.Trim().ToLowerInvariant(),
         ["IqamaNumber"] = IqamaNumber.Trim(),
         ["IqamaProfession"] = IqamaProfession.Trim(),
@@ -55,9 +55,9 @@ public sealed class RecruitmentRequestUpdate : IValidatableObject
     [MinLength(1), MaxLength(100)] public string? Nationality { get; init; }
     public string? Gender { get; init; }
     public string? DriverLicenseType { get; init; }
-    [MinLength(7), MaxLength(40)] public string? MobileNumber { get; init; }
+    [MinLength(9), MaxLength(20)] public string? MobileNumber { get; init; }
     [EmailAddress, MaxLength(255)] public string? EmailAddress { get; init; }
-    [MinLength(7), MaxLength(20)] public string? IqamaNumber { get; init; }
+    [MinLength(10), MaxLength(10)] public string? IqamaNumber { get; init; }
     [MinLength(1), MaxLength(150)] public string? IqamaProfession { get; init; }
     [MaxLength(180)] public string? CurrentEmployer { get; init; }
     public DateOnly? DateOfBirth { get; init; }
@@ -73,7 +73,8 @@ public sealed class RecruitmentRequestUpdate : IValidatableObject
 
     public Dictionary<string, object?> ToFields() => SharePointFieldMappings.OptionalFields(
         ("PreferredPosition", PreferredPosition), ("Title", Name), ("Nationality", Nationality),
-        ("Gender", Gender), ("DriverLicenseType", DriverLicenseType), ("MobileNumber", MobileNumber),
+        ("Gender", Gender), ("DriverLicenseType", DriverLicenseType),
+        ("MobileNumber", MobileNumber is null ? null : SharePointRequestValidation.NormalizeSaudiMobile(MobileNumber)),
         ("EmailAddress", EmailAddress?.ToLowerInvariant()), ("IqamaNumber", IqamaNumber),
         ("IqamaProfession", IqamaProfession), ("CurrentEmployer", CurrentEmployer),
         ("DateOfBirth", DateOfBirth?.ToString("yyyy-MM-dd")), ("City", City),
@@ -311,11 +312,19 @@ internal static class SharePointRequestValidation
         if (gender is not null && !Genders.Contains(gender)) yield return Error("gender is invalid", "Gender");
         if (license is not null && !Licenses.Contains(license)) yield return Error("driver_license_type is invalid", "DriverLicenseType");
         if (qualification is not null && !Qualifications.Contains(qualification)) yield return Error("qualification is invalid", "Qualification");
-        if (mobile is not null && !ValidPhone(mobile)) yield return Error("Enter a valid mobile number", "MobileNumber");
-        if (iqama is not null && !ValidId(iqama)) yield return Error("ID/Iqama number must contain 7-20 digits and cannot start with zero", "IqamaNumber");
-        if ((requireBirthDate && (birthDate is null || birthDate == default)) ||
-            (birthDate is not null && birthDate >= DateOnly.FromDateTime(DateTime.Today)))
-            yield return Error("Date of birth must be in the past", "DateOfBirth");
+        if (mobile is not null && !ValidSaudiMobile(mobile))
+            yield return Error("Enter a valid Saudi mobile number such as 05XXXXXXXX or 9665XXXXXXXX", "MobileNumber");
+        if (iqama is not null && !ValidIqama(iqama))
+            yield return Error("Iqama number must contain exactly 10 digits and begin with 2", "IqamaNumber");
+        if (requireBirthDate && (birthDate is null || birthDate == default))
+        {
+            yield return Error("Date of birth is required", "DateOfBirth");
+        }
+        else if (birthDate is not null &&
+                 (birthDate == default || birthDate > DateOnly.FromDateTime(PortalClock.UtcNow()).AddYears(-18)))
+        {
+            yield return Error("Applicant must be at least 18 years old", "DateOfBirth");
+        }
     }
 
     public static IEnumerable<ValidationResult> ValidateTraining(CooperativeTrainingCreateRequest value)
@@ -338,6 +347,26 @@ internal static class SharePointRequestValidation
         var digits = new string(value.Where(char.IsDigit).ToArray());
         return value.All(character => char.IsDigit(character) || " +()-".Contains(character)) && digits.Length is >= 7 and <= 20;
     }
+
+    public static string NormalizeSaudiMobile(string value)
+    {
+        var digits = new string(value.Where(char.IsDigit).ToArray());
+        if (digits.StartsWith("00966", StringComparison.Ordinal)) digits = digits[2..];
+        if (digits.StartsWith("05", StringComparison.Ordinal)) digits = $"966{digits[1..]}";
+        else if (digits.Length == 9 && digits[0] == '5') digits = $"966{digits}";
+        return digits;
+    }
+
+    private static bool ValidSaudiMobile(string value)
+    {
+        if (!value.All(character => char.IsDigit(character) || " +()-".Contains(character))) return false;
+        var normalized = NormalizeSaudiMobile(value);
+        return normalized.Length == 12 && normalized.StartsWith("9665", StringComparison.Ordinal) &&
+            normalized.All(char.IsDigit);
+    }
+
+    private static bool ValidIqama(string value) =>
+        value.Length == 10 && value[0] == '2' && value.All(char.IsDigit);
 
     private static bool ValidId(string value) => value.Length is >= 7 and <= 20 && value[0] != '0' && value.All(char.IsDigit);
     private static ValidationResult Error(string message, string member) => new(message, [member]);

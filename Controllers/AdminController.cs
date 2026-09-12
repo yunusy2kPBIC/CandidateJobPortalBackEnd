@@ -26,8 +26,10 @@ public sealed class AdminController(
         var candidates = await database.Users.CountAsync(value => value.Role == PortalRoles.Candidate, cancellationToken);
         var admins = await database.Users.CountAsync(value => value.Role == PortalRoles.Administrator, cancellationToken);
         var today = PortalClock.UtcNow().Date;
+        var tomorrow = today.AddDays(1);
         var openJobs = await database.Jobs.CountAsync(
-            value => value.IsOpen && (value.ExpiresAt == null || value.ExpiresAt >= today), cancellationToken);
+            value => value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
+                (value.ExpiresAt == null || value.ExpiresAt >= today), cancellationToken);
         var applications = await database.Applications.CountAsync(cancellationToken);
         return new AdminSummaryResponse(users, candidates, admins, openJobs, applications);
     }
@@ -87,7 +89,8 @@ public sealed class AdminController(
         ValidateEmploymentType(payload.EmploymentType);
         await masterData.ValidateJobAsync(payload.Country, payload.City, payload.Division,
             payload.JobFunction, payload.CareerLevel, cancellationToken);
-        var postedAt = PortalClock.UtcNow();
+        var postedAt = payload.PostedAt?.Date ?? PortalClock.UtcNow().Date;
+        ValidatePostingDate(postedAt);
         var expiresAt = payload.ExpiresAt?.Date
             ?? throw new ApiException(400, "expires_at is required");
         ValidateExpiryDate(expiresAt, postedAt);
@@ -104,6 +107,7 @@ public sealed class AdminController(
             Description = payload.Description.Trim(),
             Requirements = payload.Requirements.Trim(),
             IsOpen = payload.IsOpen,
+            IsPublished = payload.IsPublished,
             IsFeatured = payload.IsFeatured,
             PostedAt = postedAt,
             ExpiresAt = expiresAt,
@@ -134,7 +138,11 @@ public sealed class AdminController(
             payload.JobFunction ?? job.JobFunction,
             payload.CareerLevel ?? job.CareerLevel,
             cancellationToken);
-        if (payload.ExpiresAt is not null) ValidateExpiryDate(payload.ExpiresAt.Value.Date, job.PostedAt);
+        var postedAt = payload.PostedAt?.Date ?? job.PostedAt.Date;
+        var expiresAt = payload.ExpiresAt?.Date ?? job.ExpiresAt?.Date;
+        if (payload.PostedAt is not null && payload.PostedAt.Value.Date != job.PostedAt.Date)
+            ValidatePostingDate(postedAt);
+        if (expiresAt is not null) ValidateExpiryDate(expiresAt.Value, postedAt);
         var changedFields = JobChangedFields(job, payload);
 
         if (payload.Title is not null) job.Title = payload.Title.Trim();
@@ -148,7 +156,9 @@ public sealed class AdminController(
         if (payload.Description is not null) job.Description = payload.Description.Trim();
         if (payload.Requirements is not null) job.Requirements = payload.Requirements.Trim();
         if (payload.IsOpen is not null) job.IsOpen = payload.IsOpen.Value;
+        if (payload.IsPublished is not null) job.IsPublished = payload.IsPublished.Value;
         if (payload.IsFeatured is not null) job.IsFeatured = payload.IsFeatured.Value;
+        if (payload.PostedAt is not null) job.PostedAt = payload.PostedAt.Value.Date;
         if (payload.ExpiresAt is not null) job.ExpiresAt = payload.ExpiresAt.Value.Date;
 
         if (changedFields.Count > 0)
@@ -301,6 +311,12 @@ public sealed class AdminController(
             throw new ApiException(400, "expires_at cannot be earlier than the posting date");
     }
 
+    private static void ValidatePostingDate(DateTime postedAt)
+    {
+        if (postedAt.Date < PortalClock.UtcNow().Date)
+            throw new ApiException(400, "posted_at must be today or a future date");
+    }
+
     private static List<string> JobChangedFields(Job job, AdminJobUpdateRequest payload)
     {
         var changes = new List<string>();
@@ -315,7 +331,9 @@ public sealed class AdminController(
         if (payload.Description is not null && job.Description != payload.Description.Trim()) changes.Add("description");
         if (payload.Requirements is not null && job.Requirements != payload.Requirements.Trim()) changes.Add("requirements");
         if (payload.IsOpen is not null && job.IsOpen != payload.IsOpen.Value) changes.Add("open status");
+        if (payload.IsPublished is not null && job.IsPublished != payload.IsPublished.Value) changes.Add("publish status");
         if (payload.IsFeatured is not null && job.IsFeatured != payload.IsFeatured.Value) changes.Add("featured status");
+        if (payload.PostedAt is not null && job.PostedAt.Date != payload.PostedAt.Value.Date) changes.Add("posting date");
         if (payload.ExpiresAt is not null && job.ExpiresAt?.Date != payload.ExpiresAt.Value.Date) changes.Add("expiry date");
         return changes;
     }

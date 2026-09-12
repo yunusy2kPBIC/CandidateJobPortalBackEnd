@@ -55,6 +55,9 @@ public sealed class DatabaseBootstrapper(
             "IF COL_LENGTH('jobs', 'expires_at') IS NULL ALTER TABLE jobs ADD expires_at datetime2 NULL;",
             cancellationToken);
         await database.Database.ExecuteSqlRawAsync(
+            "IF COL_LENGTH('jobs', 'is_published') IS NULL ALTER TABLE jobs ADD is_published bit NOT NULL CONSTRAINT DF_jobs_is_published DEFAULT 1;",
+            cancellationToken);
+        await database.Database.ExecuteSqlRawAsync(
             "IF COL_LENGTH('users', 'nationality') IS NULL ALTER TABLE users ADD nationality nvarchar(50) NOT NULL CONSTRAINT DF_users_nationality DEFAULT '';",
             cancellationToken);
         await database.Database.ExecuteSqlRawAsync(

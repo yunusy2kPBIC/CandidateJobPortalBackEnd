@@ -51,6 +51,7 @@ public sealed class Job
     public string Description { get; set; } = "";
     public string Requirements { get; set; } = "";
     public bool IsOpen { get; set; } = true;
+    public bool IsPublished { get; set; } = true;
     public bool IsFeatured { get; set; }
     public DateTime PostedAt { get; set; } = PortalClock.UtcNow();
     public DateTime? ExpiresAt { get; set; }

@@ -26,8 +26,10 @@ public sealed class JobsController(
         if (sort is not ("recent" or "oldest" or "title"))
             throw new ApiException(422, "sort must be recent, oldest, or title");
         var today = PortalClock.UtcNow().Date;
+        var tomorrow = today.AddDays(1);
         IQueryable<Job> query = database.Jobs.AsNoTracking()
-            .Where(job => job.IsOpen && (job.ExpiresAt == null || job.ExpiresAt >= today));
+            .Where(job => job.IsPublished && job.IsOpen && job.PostedAt < tomorrow &&
+                (job.ExpiresAt == null || job.ExpiresAt >= today));
         if (!string.IsNullOrWhiteSpace(keywords))
         {
             var term = keywords.Trim().ToLower();
@@ -62,8 +64,10 @@ public sealed class JobsController(
     public async Task<ActionResult<JobResponse>> GetJob(int jobId, CancellationToken cancellationToken)
     {
         var today = PortalClock.UtcNow().Date;
+        var tomorrow = today.AddDays(1);
         var job = await database.Jobs.AsNoTracking().SingleOrDefaultAsync(
-                value => value.Id == jobId && value.IsOpen && (value.ExpiresAt == null || value.ExpiresAt >= today),
+                value => value.Id == jobId && value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
+                    (value.ExpiresAt == null || value.ExpiresAt >= today),
                 cancellationToken)
             ?? throw new ApiException(404, "Job not found");
         return job.ToResponse();
@@ -82,7 +86,9 @@ public sealed class JobsController(
         if (string.IsNullOrWhiteSpace(user.ResumeName) || string.IsNullOrWhiteSpace(user.ResumePath))
             throw new ApiException(400, "Upload your resume before applying for a job");
         var job = await database.Jobs.FindAsync([jobId], cancellationToken);
-        if (job is null || !job.IsOpen || (job.ExpiresAt is not null && job.ExpiresAt.Value.Date < PortalClock.UtcNow().Date))
+        var today = PortalClock.UtcNow().Date;
+        if (job is null || !job.IsPublished || !job.IsOpen || job.PostedAt.Date > today ||
+            (job.ExpiresAt is not null && job.ExpiresAt.Value.Date < today))
             throw new ApiException(404, "This job is no longer available");
         if (await database.Applications.AnyAsync(value => value.UserId == user.Id && value.JobId == job.Id, cancellationToken))
             throw new ApiException(409, "You have already applied for this job");

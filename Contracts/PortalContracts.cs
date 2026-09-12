@@ -150,6 +150,7 @@ public sealed record JobResponse(
     string Description,
     string Requirements,
     bool IsOpen,
+    bool IsPublished,
     bool IsFeatured,
     DateTime PostedAt,
     DateTime? ExpiresAt);
@@ -217,7 +218,9 @@ public class AdminJobCreateRequest
     [Required, MinLength(1), MaxLength(10000)] public string Description { get; init; } = "";
     [Required, MinLength(1), MaxLength(10000)] public string Requirements { get; init; } = "";
     public bool IsOpen { get; init; } = true;
+    public bool IsPublished { get; init; } = true;
     public bool IsFeatured { get; init; }
+    public DateTime? PostedAt { get; init; }
     [Required] public DateTime? ExpiresAt { get; init; }
 }
 
@@ -234,7 +237,9 @@ public sealed class AdminJobUpdateRequest
     [MinLength(1), MaxLength(10000)] public string? Description { get; init; }
     [MinLength(1), MaxLength(10000)] public string? Requirements { get; init; }
     public bool? IsOpen { get; init; }
+    public bool? IsPublished { get; init; }
     public bool? IsFeatured { get; init; }
+    public DateTime? PostedAt { get; init; }
     public DateTime? ExpiresAt { get; init; }
 }
 
@@ -305,7 +310,7 @@ public static class PortalMappings
     public static JobResponse ToResponse(this Job job) => new(
         job.Id, job.Title, job.Division, job.Country, job.City, job.JobFunction,
         job.CareerLevel, job.EmploymentType, job.Summary, job.Description, job.Requirements,
-        job.IsOpen, job.IsFeatured, job.PostedAt, job.ExpiresAt);
+        job.IsOpen, job.IsPublished, job.IsFeatured, job.PostedAt, job.ExpiresAt);
 
     public static ApplicationResponse ToResponse(this Application application) => new(
         application.Id, $"APP-{application.Id:0000}", application.Status,
