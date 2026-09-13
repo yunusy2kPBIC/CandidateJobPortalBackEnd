@@ -18,7 +18,8 @@ public sealed class SharePointController(
     SharePointSyncService synchronization,
     PortalDbContext database,
     PortalOptions options,
-    AuditLogService auditLogs) : PortalControllerBase
+    AuditLogService auditLogs,
+    MasterDataService masterData) : PortalControllerBase
 {
     [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("status")]
@@ -225,6 +226,7 @@ public sealed class SharePointController(
     public async Task<ActionResult<RecruitmentRequestResponse>> CreateRecruitmentRequest(
         RecruitmentRequestCreate payload, CancellationToken cancellationToken)
     {
+        await masterData.ValidateNationalityAsync(payload.Nationality, cancellationToken);
         var item = await client.CreateItemAsync(
             options.SharePointRecruitmentRequestsList, payload.ToFields(), cancellationToken);
         await auditLogs.RecordAsync(CurrentUserId, "Created", "Recruitment request", item.Id,
@@ -242,6 +244,8 @@ public sealed class SharePointController(
     public async Task<RecruitmentRequestResponse> UpdateRecruitmentRequest(
         int itemId, RecruitmentRequestUpdate payload, CancellationToken cancellationToken)
     {
+        if (payload.Nationality is not null)
+            await masterData.ValidateNationalityAsync(payload.Nationality, cancellationToken);
         var updated = RecruitmentRequestResponse.FromItem(await client.UpdateItemAsync(
             options.SharePointRecruitmentRequestsList, itemId, payload.ToFields(), cancellationToken));
         await auditLogs.RecordAsync(CurrentUserId, "Updated", "Recruitment request", itemId.ToString(),

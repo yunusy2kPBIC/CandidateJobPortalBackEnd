@@ -79,8 +79,14 @@ public sealed class JobsController(
         var user = await database.Users.FindAsync([CurrentUserId], cancellationToken)
             ?? throw new ApiException(401, "Invalid or expired token");
         if (user.Role != PortalRoles.Candidate) throw new ApiException(403, "Only candidate accounts can apply for jobs");
-        if (!PortalValues.Nationalities.Contains(user.Nationality))
+        try
+        {
+            await masterData.ValidateNationalityAsync(user.Nationality, cancellationToken);
+        }
+        catch (ApiException)
+        {
             throw new ApiException(400, "Complete your profile and select your nationality before applying");
+        }
         if (!PortalValues.Genders.Contains(user.Gender))
             throw new ApiException(400, "Complete your profile and select your gender before applying");
         if (string.IsNullOrWhiteSpace(user.ResumeName) || string.IsNullOrWhiteSpace(user.ResumePath))

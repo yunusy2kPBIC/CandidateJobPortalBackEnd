@@ -179,6 +179,7 @@ public static class LookupCategories
     public const string Division = "division";
     public const string JobFunction = "job_function";
     public const string CareerLevel = "career_level";
+    public const string Nationality = "Nationality";
 }
 
 public sealed class LookupValue

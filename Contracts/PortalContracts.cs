@@ -164,6 +164,7 @@ public sealed record LookupCountryResponse(string Name, IReadOnlyList<string> Ci
 
 public sealed record LookupOptionsResponse(
     IReadOnlyList<LookupCountryResponse> Countries,
+    IReadOnlyList<string> Nationalities,
     IReadOnlyList<string> Divisions,
     IReadOnlyList<string> JobFunctions,
     IReadOnlyList<string> CareerLevels);
@@ -190,6 +191,7 @@ public sealed record AdminJobOptionsResponse(
     IReadOnlyList<string> Countries,
     IReadOnlyList<string> Cities,
     IReadOnlyDictionary<string, IReadOnlyList<string>> CitiesByCountry,
+    IReadOnlyList<string> Nationalities,
     IReadOnlyList<string> Divisions,
     IReadOnlyList<string> JobFunctions,
     IReadOnlyList<string> CareerLevels);

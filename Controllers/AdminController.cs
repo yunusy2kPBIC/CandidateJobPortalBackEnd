@@ -77,6 +77,7 @@ public sealed class AdminController(
             lookup.Countries.Select(value => value.Name).ToArray(),
             lookup.Countries.SelectMany(value => value.Cities).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             citiesByCountry,
+            lookup.Nationalities,
             lookup.Divisions,
             lookup.JobFunctions,
             lookup.CareerLevels);

@@ -50,8 +50,8 @@ public sealed class AuthController(
         if (!string.Equals(payload.PrivacyVersion.Trim(), privacyNotice.CurrentVersion, StringComparison.Ordinal))
             throw new ApiException(409, "The privacy notice has changed. Review and accept the current version before registering.");
         var nationality = payload.Nationality.Trim();
-        if (!payload.IsStudent && !PortalValues.Nationalities.Contains(nationality))
-            throw new ApiException(400, "Select a valid nationality");
+        if (!payload.IsStudent)
+            await masterData.ValidateNationalityAsync(nationality, cancellationToken);
         var gender = payload.Gender.Trim();
         if (!PortalValues.Genders.Contains(gender))
             throw new ApiException(400, "Select a valid gender");

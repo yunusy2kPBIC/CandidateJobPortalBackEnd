@@ -30,8 +30,8 @@ public sealed class ProfileController(
         var user = await database.Users.FindAsync([CurrentUserId], cancellationToken)
             ?? throw new ApiException(401, "Invalid or expired token");
         var nationality = payload.Nationality.Trim();
-        if (user.Role == PortalRoles.Candidate && !PortalValues.Nationalities.Contains(nationality))
-            throw new ApiException(400, "Select a valid nationality");
+        if (user.Role == PortalRoles.Candidate)
+            await masterData.ValidateNationalityAsync(nationality, cancellationToken);
         var gender = payload.Gender.Trim();
         if (user.Role is PortalRoles.Candidate or PortalRoles.Student && !PortalValues.Genders.Contains(gender))
             throw new ApiException(400, "Select a valid gender");

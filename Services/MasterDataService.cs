@@ -32,6 +32,7 @@ public sealed class MasterDataService(PortalDbContext database)
 
         return new LookupOptionsResponse(
             countries,
+            Values(rows, LookupCategories.Nationality),
             Values(rows, LookupCategories.Division),
             Values(rows, LookupCategories.JobFunction),
             Values(rows, LookupCategories.CareerLevel));
@@ -41,6 +42,12 @@ public sealed class MasterDataService(PortalDbContext database)
     {
         if (!await IsActiveAsync(LookupCategories.Country, country, null, cancellationToken))
             throw new ApiException(400, "Select a valid country");
+    }
+
+    public async Task ValidateNationalityAsync(string nationality, CancellationToken cancellationToken = default)
+    {
+        if (!await IsActiveAsync(LookupCategories.Nationality, nationality, null, cancellationToken))
+            throw new ApiException(400, "Select a valid nationality");
     }
 
     public async Task ValidateCountryCityAsync(string country, string city, CancellationToken cancellationToken = default)
