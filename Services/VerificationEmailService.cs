@@ -13,37 +13,28 @@ namespace CandidatePortal.Api.Services;
 public sealed class VerificationEmailService(
     PortalDbContext database,
     PortalOptions options,
-    ILogger<VerificationEmailService> logger)
+    IEmailSender emailSender)
 {
     public int MaxAttempts => options.EmailVerificationMaxAttempts;
 
-    public Task SendAccountCreatedAsync(
+    public async Task SendAccountCreatedAsync(
         User user,
         CancellationToken cancellationToken = default)
     {
-        EnsureDevelopmentDelivery();
-        cancellationToken.ThrowIfCancellationRequested();
-
         var nextStep = user.Role == PortalRoles.Student
             ? "You can now complete your Cooperative Training application."
             : "You can now complete your profile, upload your CV, and apply for available jobs.";
-        logger.LogInformation(
-            "DEV EMAIL from {Sender} to {Recipient}. Subject: Your PBICareerPosting account is ready. " +
-            "Hello {FirstName}, your email has been verified and your {AccountType} account is active. {NextStep}",
-            options.EmailSenderAddress,
+        await emailSender.SendAsync(
             user.Email,
-            user.FirstName,
-            user.Role,
-            nextStep);
-        return Task.CompletedTask;
+            "Your PBICareerPosting account is ready",
+            $"Hello {user.FirstName}, your email has been verified and your {user.Role} account is active. {nextStep}",
+            cancellationToken);
     }
 
     public async Task<RegistrationPendingResponse> IssueAsync(
         User user,
         CancellationToken cancellationToken = default)
     {
-        EnsureDevelopmentDelivery();
-
         var now = PortalClock.UtcNow();
         var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
         var verification = await database.EmailVerifications
@@ -61,18 +52,17 @@ public sealed class VerificationEmailService(
         verification.ConsumedAt = null;
         await database.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation(
-            "DEV EMAIL from {Sender} to {Recipient}: PBICareerPosting verification code {VerificationCode}. It expires at {ExpiresAt} UTC.",
-            options.EmailSenderAddress,
+        await emailSender.SendAsync(
             user.Email,
-            code,
-            verification.ExpiresAt);
+            "Your PBICareerPosting verification code",
+            $"Your verification code is {code}. It expires at {verification.ExpiresAt:O} UTC.",
+            cancellationToken);
 
         return new RegistrationPendingResponse(
             user.Email,
             verification.ExpiresAt,
             verification.ResendAvailableAt,
-            options.ExposeDevelopmentVerificationCode ? code : null);
+            IsDevelopmentDelivery && options.ExposeDevelopmentVerificationCode ? code : null);
     }
 
     public bool Matches(int userId, string code, string expectedHash)
@@ -88,9 +78,6 @@ public sealed class VerificationEmailService(
         return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{userId}:{code}")));
     }
 
-    private void EnsureDevelopmentDelivery()
-    {
-        if (!string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase))
-            throw new ApiException(503, "Email delivery is not configured");
-    }
+    private bool IsDevelopmentDelivery =>
+        string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase);
 }

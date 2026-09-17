@@ -3,11 +3,22 @@ using CandidatePortal.Api.Data;
 using CandidatePortal.Api.Infrastructure;
 using CandidatePortal.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
 
 namespace CandidatePortal.Api.Services;
 
 public sealed class MasterDataService(PortalDbContext database)
 {
+    private static readonly IReadOnlyList<string> ResidenceCountries = CultureInfo
+        .GetCultures(CultureTypes.SpecificCultures)
+        .Select(culture => new RegionInfo(culture.Name).EnglishName)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(country => country, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    private static readonly HashSet<string> ResidenceCountryNames =
+        new(ResidenceCountries, StringComparer.OrdinalIgnoreCase);
+
     public async Task<LookupOptionsResponse> GetOptionsAsync(CancellationToken cancellationToken = default)
     {
         var rows = await database.LookupValues.AsNoTracking()
@@ -32,10 +43,23 @@ public sealed class MasterDataService(PortalDbContext database)
 
         return new LookupOptionsResponse(
             countries,
+            ResidenceCountries,
             Values(rows, LookupCategories.Nationality),
             Values(rows, LookupCategories.Division),
             Values(rows, LookupCategories.JobFunction),
             Values(rows, LookupCategories.CareerLevel));
+    }
+
+    public async Task ValidateResidenceCountryAsync(
+        string country,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = country.Trim();
+        if (ResidenceCountryNames.Contains(normalized) ||
+            await IsActiveAsync(LookupCategories.Country, normalized, null, cancellationToken))
+            return;
+
+        throw new ApiException(400, "Select a valid country");
     }
 
     public async Task ValidateCountryAsync(string country, CancellationToken cancellationToken = default)

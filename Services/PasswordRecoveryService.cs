@@ -12,7 +12,7 @@ namespace CandidatePortal.Api.Services;
 public sealed class PasswordRecoveryService(
     PortalDbContext database,
     PortalOptions options,
-    ILogger<PasswordRecoveryService> logger)
+    IEmailSender emailSender)
 {
     private const string GenericMessage =
         "If an active account exists for this email, password reset instructions have been generated.";
@@ -34,7 +34,6 @@ public sealed class PasswordRecoveryService(
         User user,
         CancellationToken cancellationToken = default)
     {
-        EnsureDevelopmentDelivery();
         var now = PortalClock.UtcNow();
         var reset = await database.PasswordResets
             .SingleOrDefaultAsync(value => value.UserId == user.Id, cancellationToken);
@@ -58,20 +57,18 @@ public sealed class PasswordRecoveryService(
         reset.ConsumedAt = null;
         await database.SaveChangesAsync(cancellationToken);
 
-        logger.LogInformation(
-            "DEV EMAIL from {Sender} to {Recipient}. Subject: Reset your PBICareerPosting password. " +
-            "Your password reset code is {ResetCode}. It expires at {ExpiresAt} UTC.",
-            options.EmailSenderAddress,
+        await emailSender.SendAsync(
             user.Email,
-            code,
-            reset.ExpiresAt);
+            "Reset your PBICareerPosting password",
+            $"Your password reset code is {code}. It expires at {reset.ExpiresAt:O} UTC.",
+            cancellationToken);
 
         return new PasswordRecoveryPendingResponse(
             GenericMessage,
             user.Email,
             reset.ExpiresAt,
             reset.ResendAvailableAt,
-            options.ExposeDevelopmentVerificationCode ? code : null);
+            IsDevelopmentDelivery && options.ExposeDevelopmentVerificationCode ? code : null);
     }
 
     public bool Matches(int userId, string code, string expectedHash)
@@ -83,15 +80,11 @@ public sealed class PasswordRecoveryService(
 
     public Task SendPasswordChangedAsync(User user, CancellationToken cancellationToken = default)
     {
-        EnsureDevelopmentDelivery();
-        cancellationToken.ThrowIfCancellationRequested();
-        logger.LogInformation(
-            "DEV EMAIL from {Sender} to {Recipient}. Subject: Your PBICareerPosting password was changed. " +
-            "Hello {FirstName}, your password has been reset successfully. If you did not make this change, contact candidate support.",
-            options.EmailSenderAddress,
+        return emailSender.SendAsync(
             user.Email,
-            user.FirstName);
-        return Task.CompletedTask;
+            "Your PBICareerPosting password was changed",
+            $"Hello {user.FirstName}, your password has been reset successfully. If you did not make this change, contact candidate support.",
+            cancellationToken);
     }
 
     private string Hash(int userId, string code)
@@ -100,9 +93,6 @@ public sealed class PasswordRecoveryService(
         return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"password-reset:{userId}:{code}")));
     }
 
-    private void EnsureDevelopmentDelivery()
-    {
-        if (!string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase))
-            throw new ApiException(503, "Email delivery is not configured");
-    }
+    private bool IsDevelopmentDelivery =>
+        string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase);
 }

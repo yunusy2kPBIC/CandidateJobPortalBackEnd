@@ -35,10 +35,7 @@ public sealed class ProfileController(
         var gender = payload.Gender.Trim();
         if (user.Role is PortalRoles.Candidate or PortalRoles.Student && !PortalValues.Genders.Contains(gender))
             throw new ApiException(400, "Select a valid gender");
-        if (string.IsNullOrWhiteSpace(payload.City))
-            await masterData.ValidateCountryAsync(payload.Country, cancellationToken);
-        else
-            await masterData.ValidateCountryCityAsync(payload.Country, payload.City, cancellationToken);
+        await masterData.ValidateResidenceCountryAsync(payload.Country, cancellationToken);
         user.FirstName = payload.FirstName.Trim(); user.LastName = payload.LastName.Trim();
         user.CountryCode = payload.CountryCode.Trim(); user.Phone = payload.Phone.Trim(); user.Country = payload.Country.Trim();
         user.Nationality = nationality; user.Gender = gender; user.City = payload.City.Trim(); user.Title = payload.Title.Trim(); user.About = payload.About.Trim();

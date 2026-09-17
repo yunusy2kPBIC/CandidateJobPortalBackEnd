@@ -101,6 +101,7 @@ internal static class SharePointProvisioner
                     (value.TryGetProperty("displayName", out var columnDisplayName) &&
                         string.Equals(columnDisplayName.GetString(), displayName, StringComparison.OrdinalIgnoreCase)));
                 await AddMissingChoiceValues(client, siteId, listId, column, definition, cancellationToken);
+                await SyncRequiredSetting(client, siteId, listId, column, definition, cancellationToken);
                 continue;
             }
             using var _ = await client.SendAsync(HttpMethod.Post,
@@ -150,6 +151,25 @@ internal static class SharePointProvisioner
             new { choice = new { allowTextEntry, choices = merged, displayAs } }, null, cancellationToken);
     }
 
+    private static async Task SyncRequiredSetting(
+        GraphSharePointClient client,
+        string siteId,
+        string listId,
+        JsonElement column,
+        IReadOnlyDictionary<string, object?> definition,
+        CancellationToken cancellationToken)
+    {
+        if (!definition.TryGetValue("required", out var desiredValue) || desiredValue is not bool desired ||
+            !column.TryGetProperty("required", out var currentValue) || currentValue.GetBoolean() == desired)
+            return;
+
+        var columnId = column.GetProperty("id").GetString()
+            ?? throw new ApiException(502, "SharePoint returned a column without an ID");
+        using var _ = await client.SendAsync(HttpMethod.Patch,
+            $"/sites/{Uri.EscapeDataString(siteId)}/lists/{Uri.EscapeDataString(listId)}/columns/{Uri.EscapeDataString(columnId)}",
+            new { required = desired }, null, cancellationToken);
+    }
+
     private static Dictionary<string, object?> Text(string name, bool required = false, bool multiline = false, string? displayName = null) => new()
     {
         ["name"] = name,
@@ -182,7 +202,7 @@ internal static class SharePointProvisioner
         ["name"] = name,
         ["displayName"] = displayName,
         ["required"] = required,
-        ["number"] = new { decimalPlaces = "automatic", displayAs = "number", minimum = min, maximum = max },
+        ["number"] = new { decimalPlaces = "none", displayAs = "number", minimum = min, maximum = max },
     };
     private static Dictionary<string, object?> Lookup(string name, string listId) => new()
     {
@@ -222,7 +242,7 @@ internal static class SharePointProvisioner
         Choice("Gender", ["Male", "Female", "Other"], true),
         Choice("DriverLicenseType", ["Saudi License", "Valid GCC License", "Other License", "None"], true, displayName: "Driver License Type"),
         Text("MobileNumber", true, displayName: "Mobile Number"), Text("EmailAddress", true, displayName: "Email Address"),
-        Text("IqamaNumber", true, displayName: "ID/Iqama Number"), Text("IqamaProfession", true, displayName: "Iqama Profession"),
+        Text("IqamaNumber", true, displayName: "ID/Iqama Number"), Text("IqamaProfession", displayName: "Iqama Profession"),
         Text("CurrentEmployer", displayName: "Current Employer"), Date("DateOfBirth", true, true, "Date of Birth"),
         Text("City", true), Boolean("AcceptWorkInAnotherCity", "Accept Work in Another City"),
         Choice("Qualification", ["High School", "Diploma", "Bachelor's Degree", "Master's Degree", "Doctorate", "Other"], true),

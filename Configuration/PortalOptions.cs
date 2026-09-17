@@ -19,6 +19,15 @@ public sealed class PortalOptions
     public string MicrosoftAuthClientSecret { get; init; } = "";
     public string EmailDeliveryMode { get; init; } = "development";
     public string EmailSenderAddress { get; init; } = "dev-no-reply@candidateportal.local";
+    public string EmailSenderName { get; init; } = "PBICareerPosting";
+    public string SmtpHost { get; init; } = "";
+    public int SmtpPort { get; init; } = 587;
+    public string SmtpUsername { get; init; } = "";
+    public string SmtpTenantId { get; init; } = "";
+    public string SmtpClientId { get; init; } = "";
+    public string SmtpClientSecret { get; init; } = "";
+    public bool SmtpEnableSsl { get; init; } = true;
+    public int SmtpTimeoutSeconds { get; init; } = 30;
     public int EmailVerificationMinutes { get; init; } = 10;
     public int EmailVerificationResendSeconds { get; init; } = 60;
     public int EmailVerificationMaxAttempts { get; init; } = 5;
@@ -61,6 +70,15 @@ public sealed class PortalOptions
         !string.IsNullOrWhiteSpace(SharePointClientSecret) &&
         (!string.IsNullOrWhiteSpace(SharePointSiteId) || !string.IsNullOrWhiteSpace(SharePointSiteUrl));
 
+    public bool SmtpConfigured =>
+        !string.IsNullOrWhiteSpace(SmtpHost) &&
+        SmtpPort > 0 &&
+        !string.IsNullOrWhiteSpace(SmtpUsername) &&
+        !string.IsNullOrWhiteSpace(SmtpTenantId) &&
+        !string.IsNullOrWhiteSpace(SmtpClientId) &&
+        !string.IsNullOrWhiteSpace(SmtpClientSecret) &&
+        !string.IsNullOrWhiteSpace(EmailSenderAddress);
+
     public static PortalOptions FromConfiguration(IConfiguration configuration)
     {
         static bool Flag(IConfiguration config, string name, bool fallback = false) =>
@@ -69,7 +87,6 @@ public sealed class PortalOptions
             int.TryParse(config[name], out var value) ? value : fallback;
         static double DecimalNumber(IConfiguration config, string name, double fallback) =>
             double.TryParse(config[name], out var value) ? value : fallback;
-
         var sqlServerConnectionString = configuration["SQLSERVER_CONNECTION_STRING"];
         if (string.IsNullOrWhiteSpace(sqlServerConnectionString))
         {
@@ -101,6 +118,15 @@ public sealed class PortalOptions
             MicrosoftAuthClientSecret = configuration["MICROSOFT_AUTH_CLIENT_SECRET"] ?? "",
             EmailDeliveryMode = (configuration["EMAIL_DELIVERY_MODE"] ?? "development").Trim().ToLowerInvariant(),
             EmailSenderAddress = (configuration["EMAIL_SENDER_ADDRESS"] ?? "dev-no-reply@candidateportal.local").Trim(),
+            EmailSenderName = (configuration["EMAIL_SENDER_NAME"] ?? "PBICareerPosting").Trim(),
+            SmtpHost = (configuration["SMTP_HOST"] ?? "").Trim(),
+            SmtpPort = Math.Clamp(Number(configuration, "SMTP_PORT", 587), 1, 65535),
+            SmtpUsername = (configuration["SMTP_USERNAME"] ?? "").Trim(),
+            SmtpTenantId = (configuration["SMTP_TENANT_ID"] ?? "").Trim(),
+            SmtpClientId = (configuration["SMTP_CLIENT_ID"] ?? "").Trim(),
+            SmtpClientSecret = configuration["SMTP_CLIENT_SECRET"] ?? "",
+            SmtpEnableSsl = Flag(configuration, "SMTP_ENABLE_SSL", true),
+            SmtpTimeoutSeconds = Math.Clamp(Number(configuration, "SMTP_TIMEOUT_SECONDS", 30), 5, 120),
             EmailVerificationMinutes = Math.Clamp(Number(configuration, "EMAIL_VERIFICATION_MINUTES", 10), 5, 60),
             EmailVerificationResendSeconds = Math.Clamp(Number(configuration, "EMAIL_VERIFICATION_RESEND_SECONDS", 60), 30, 300),
             EmailVerificationMaxAttempts = Math.Clamp(Number(configuration, "EMAIL_VERIFICATION_MAX_ATTEMPTS", 5), 3, 10),

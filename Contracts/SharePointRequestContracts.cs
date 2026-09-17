@@ -13,19 +13,24 @@ public sealed class RecruitmentRequestCreate : IValidatableObject
     [Required, MinLength(9), MaxLength(20)] public string MobileNumber { get; init; } = "";
     [Required, EmailAddress, MaxLength(255)] public string EmailAddress { get; init; } = "";
     [Required, MinLength(10), MaxLength(10)] public string IqamaNumber { get; init; } = "";
-    [Required, MinLength(1), MaxLength(150)] public string IqamaProfession { get; init; } = "";
+    [MaxLength(150)] public string IqamaProfession { get; init; } = "";
     [MaxLength(180)] public string CurrentEmployer { get; init; } = "Not currently employed";
     public DateOnly DateOfBirth { get; init; }
     [Required, MinLength(1), MaxLength(100)] public string City { get; init; } = "";
     public bool AcceptWorkInAnotherCity { get; init; }
     [Required] public string Qualification { get; init; } = "";
     [Range(0, 100_000_000)] public double CurrentSalary { get; init; }
-    [MaxLength(5000)] public string Comments { get; init; } = "";
+    [Required, MinLength(1), MaxLength(5000)] public string Comments { get; init; } = "";
 
-    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext) =>
-        SharePointRequestValidation.ValidateRecruitment(
-            Gender, DriverLicenseType, MobileNumber, IqamaNumber, Qualification, DateOfBirth,
-            requireBirthDate: true);
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        foreach (var result in SharePointRequestValidation.ValidateRecruitment(
+                     Gender, DriverLicenseType, MobileNumber, IqamaNumber, IqamaProfession, Qualification, DateOfBirth,
+                     requireBirthDate: true))
+            yield return result;
+        if (CurrentSalary != Math.Truncate(CurrentSalary))
+            yield return new ValidationResult("Current salary must be a whole number", [nameof(CurrentSalary)]);
+    }
 
     public Dictionary<string, object?> ToFields() => new()
     {
@@ -58,18 +63,23 @@ public sealed class RecruitmentRequestUpdate : IValidatableObject
     [MinLength(9), MaxLength(20)] public string? MobileNumber { get; init; }
     [EmailAddress, MaxLength(255)] public string? EmailAddress { get; init; }
     [MinLength(10), MaxLength(10)] public string? IqamaNumber { get; init; }
-    [MinLength(1), MaxLength(150)] public string? IqamaProfession { get; init; }
+    [MaxLength(150)] public string? IqamaProfession { get; init; }
     [MaxLength(180)] public string? CurrentEmployer { get; init; }
     public DateOnly? DateOfBirth { get; init; }
     [MinLength(1), MaxLength(100)] public string? City { get; init; }
     public bool? AcceptWorkInAnotherCity { get; init; }
     public string? Qualification { get; init; }
     [Range(0, 100_000_000)] public double? CurrentSalary { get; init; }
-    [MaxLength(5000)] public string? Comments { get; init; }
+    [MinLength(1), MaxLength(5000)] public string? Comments { get; init; }
 
-    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext) =>
-        SharePointRequestValidation.ValidateRecruitment(
-            Gender, DriverLicenseType, MobileNumber, IqamaNumber, Qualification, DateOfBirth);
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        foreach (var result in SharePointRequestValidation.ValidateRecruitment(
+                     Gender, DriverLicenseType, MobileNumber, IqamaNumber, IqamaProfession, Qualification, DateOfBirth))
+            yield return result;
+        if (CurrentSalary is not null && CurrentSalary.Value != Math.Truncate(CurrentSalary.Value))
+            yield return new ValidationResult("Current salary must be a whole number", [nameof(CurrentSalary)]);
+    }
 
     public Dictionary<string, object?> ToFields() => SharePointFieldMappings.OptionalFields(
         ("PreferredPosition", PreferredPosition), ("Title", Name), ("Nationality", Nationality),
@@ -306,7 +316,7 @@ internal static class SharePointRequestValidation
     private static readonly HashSet<string> EnglishLevels = ["Beginner", "Intermediate", "Advanced", "Fluent"];
 
     public static IEnumerable<ValidationResult> ValidateRecruitment(
-        string? gender, string? license, string? mobile, string? iqama, string? qualification,
+        string? gender, string? license, string? mobile, string? iqama, string? iqamaProfession, string? qualification,
         DateOnly? birthDate, bool requireBirthDate = false)
     {
         if (gender is not null && !Genders.Contains(gender)) yield return Error("gender is invalid", "Gender");
@@ -315,7 +325,9 @@ internal static class SharePointRequestValidation
         if (mobile is not null && !ValidSaudiMobile(mobile))
             yield return Error("Enter a valid Saudi mobile number such as 05XXXXXXXX or 9665XXXXXXXX", "MobileNumber");
         if (iqama is not null && !ValidIqama(iqama))
-            yield return Error("Iqama number must contain exactly 10 digits and begin with 2", "IqamaNumber");
+            yield return Error("ID/Iqama number must contain exactly 10 digits and begin with 1 or 2", "IqamaNumber");
+        else if (iqama is not null && !iqama.StartsWith('1') && string.IsNullOrWhiteSpace(iqamaProfession))
+            yield return Error("Iqama profession is required when ID/Iqama number does not begin with 1", "IqamaProfession");
         if (requireBirthDate && (birthDate is null || birthDate == default))
         {
             yield return Error("Date of birth is required", "DateOfBirth");
@@ -366,7 +378,7 @@ internal static class SharePointRequestValidation
     }
 
     private static bool ValidIqama(string value) =>
-        value.Length == 10 && value[0] == '2' && value.All(char.IsDigit);
+        value.Length == 10 && value[0] is '1' or '2' && value.All(char.IsDigit);
 
     private static bool ValidId(string value) => value.Length is >= 7 and <= 20 && value[0] != '0' && value.All(char.IsDigit);
     private static ValidationResult Error(string message, string member) => new(message, [member]);

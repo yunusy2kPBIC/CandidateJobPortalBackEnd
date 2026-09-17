@@ -246,6 +246,13 @@ public sealed class SharePointController(
     {
         if (payload.Nationality is not null)
             await masterData.ValidateNationalityAsync(payload.Nationality, cancellationToken);
+        var existing = RecruitmentRequestResponse.FromItem(await client.GetItemAsync(
+            options.SharePointRecruitmentRequestsList, itemId, cancellationToken));
+        var effectiveIqamaNumber = payload.IqamaNumber ?? existing.IqamaNumber;
+        var effectiveIqamaProfession = payload.IqamaProfession ?? existing.IqamaProfession;
+        if (!effectiveIqamaNumber.StartsWith('1') && string.IsNullOrWhiteSpace(effectiveIqamaProfession))
+            throw new ApiException(400,
+                "Iqama profession is required when ID/Iqama number does not begin with 1");
         var updated = RecruitmentRequestResponse.FromItem(await client.UpdateItemAsync(
             options.SharePointRecruitmentRequestsList, itemId, payload.ToFields(), cancellationToken));
         await auditLogs.RecordAsync(CurrentUserId, "Updated", "Recruitment request", itemId.ToString(),

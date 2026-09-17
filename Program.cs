@@ -34,6 +34,7 @@ builder.Services.AddScoped<PortalSignInService>();
 builder.Services.AddScoped<SharePointSyncService>();
 builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<MasterDataService>();
+builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<VerificationEmailService>();
 builder.Services.AddScoped<PasswordRecoveryService>();
 builder.Services.AddSingleton<PrivacyNoticeService>();

@@ -55,7 +55,7 @@ public sealed class AuthController(
         var gender = payload.Gender.Trim();
         if (!PortalValues.Genders.Contains(gender))
             throw new ApiException(400, "Select a valid gender");
-        await masterData.ValidateCountryAsync(payload.Country, cancellationToken);
+        await masterData.ValidateResidenceCountryAsync(payload.Country, cancellationToken);
         var existing = await database.Users.AsNoTracking()
             .Where(user => user.Email == email)
             .Select(user => new { user.IsEmailVerified })
