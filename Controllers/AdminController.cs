@@ -260,6 +260,12 @@ public sealed class AdminController(
             .SingleOrDefaultAsync(value => value.Id == applicationId, cancellationToken)
             ?? throw new ApiException(404, "Application not found");
 
+        var hiredApplication = application.User.Applications.FirstOrDefault(value =>
+            value.Id != application.Id && value.Status == "Hired");
+        if (hiredApplication is not null)
+            throw new ApiException(409,
+                $"This application is disabled because the candidate was hired under APP-{hiredApplication.Id:0000}");
+
         if (application.Status != payload.Status)
         {
             var previousStatus = application.Status;

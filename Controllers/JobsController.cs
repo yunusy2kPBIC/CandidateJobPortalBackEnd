@@ -91,6 +91,9 @@ public sealed class JobsController(
             throw new ApiException(400, "Complete your profile and select your gender before applying");
         if (string.IsNullOrWhiteSpace(user.ResumeName) || string.IsNullOrWhiteSpace(user.ResumePath))
             throw new ApiException(400, "Upload your resume before applying for a job");
+        if (await database.Applications.AnyAsync(
+                value => value.UserId == user.Id && value.Status == "Hired", cancellationToken))
+            throw new ApiException(409, "You cannot submit another application after being hired");
         var job = await database.Jobs.FindAsync([jobId], cancellationToken);
         var today = PortalClock.UtcNow().Date;
         if (job is null || !job.IsPublished || !job.IsOpen || job.PostedAt.Date > today ||
