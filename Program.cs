@@ -32,6 +32,8 @@ builder.Services.AddSingleton<DocumentStorage>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
 builder.Services.AddScoped<PortalSignInService>();
 builder.Services.AddScoped<SharePointSyncService>();
+builder.Services.AddScoped<SharePointOutboxService>();
+builder.Services.AddHostedService<SharePointOutboxWorker>();
 builder.Services.AddScoped<AuditLogService>();
 builder.Services.AddScoped<MasterDataService>();
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();

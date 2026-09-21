@@ -22,7 +22,7 @@ public sealed class ExternalAuthController(
     PortalOptions options,
     PasswordHasher passwordHasher,
     PortalSignInService signInService,
-    SharePointSyncService sharePoint,
+    SharePointOutboxService sharePointOutbox,
     ILogger<ExternalAuthController> logger) : ControllerBase
 {
     private const int ExchangeCodeMinutes = 5;
@@ -122,6 +122,7 @@ public sealed class ExternalAuthController(
         ClaimsPrincipal principal,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         var linked = await database.ExternalLogins.Include(value => value.User).SingleOrDefaultAsync(
             value => value.Provider == provider && value.ProviderUserId == providerUserId,
             cancellationToken);
@@ -134,9 +135,10 @@ public sealed class ExternalAuthController(
             {
                 linked.Email = email;
             }
-            await database.SaveChangesAsync(cancellationToken);
             if (linkedBecameVerified)
-                await sharePoint.SyncCandidateAsync(linked.User, cancellationToken);
+                sharePointOutbox.EnqueueCandidate(linked.User.Id);
+            await database.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return linked.User;
         }
 
@@ -180,8 +182,10 @@ public sealed class ExternalAuthController(
         await database.SaveChangesAsync(cancellationToken);
         if (created || becameVerified)
         {
-            await sharePoint.SyncCandidateAsync(user, cancellationToken);
+            sharePointOutbox.EnqueueCandidate(user.Id);
+            await database.SaveChangesAsync(cancellationToken);
         }
+        await transaction.CommitAsync(cancellationToken);
         return user;
     }
 

@@ -12,7 +12,7 @@ namespace CandidatePortal.Api.Controllers;
 [Authorize, Route("api/profile")]
 public sealed class ProfileController(
     PortalDbContext database,
-    SharePointSyncService sharePoint,
+    SharePointOutboxService sharePointOutbox,
     DocumentStorage storage,
     MasterDataService masterData) : PortalControllerBase
 {
@@ -40,8 +40,8 @@ public sealed class ProfileController(
         user.CountryCode = payload.CountryCode.Trim(); user.Phone = payload.Phone.Trim(); user.Country = payload.Country.Trim();
         user.Nationality = nationality; user.Gender = gender; user.City = payload.City.Trim(); user.Title = payload.Title.Trim(); user.About = payload.About.Trim();
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        sharePointOutbox.EnqueueCandidate(user.Id);
         await database.SaveChangesAsync(cancellationToken);
-        await sharePoint.SyncCandidateAsync(user, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return user.ToResponse();
     }
@@ -57,22 +57,27 @@ public sealed class ProfileController(
         if (extension is not (".pdf" or ".doc" or ".docx")) throw new ApiException(400, "Upload a PDF, DOC or DOCX resume");
         if (resume.Length > 5 * 1024 * 1024) throw new ApiException(400, "Resume must be smaller than 5 MB");
 
-        string savedPath;
-        if (sharePoint.Enabled)
+        if (sharePointOutbox.Enabled)
         {
             await using var memory = new MemoryStream();
             await resume.CopyToAsync(memory, cancellationToken);
-            var uploaded = await sharePoint.UploadCandidateResumeAsync(user, resume.FileName, memory.ToArray(),
-                resume.ContentType ?? "application/octet-stream", cancellationToken);
-            savedPath = uploaded.WebUrl ?? $"sharepoint-item:{uploaded.Id}";
+            await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+            var queued = sharePointOutbox.EnqueueResume(user.Id, resume.FileName,
+                resume.ContentType ?? "application/octet-stream", memory.ToArray())
+                ?? throw new ApiException(503, "SharePoint resume queue is unavailable");
+            user.ResumeName = resume.FileName;
+            user.ResumePath = "sharepoint-pending";
+            await database.SaveChangesAsync(cancellationToken);
+            user.ResumePath = SharePointOutboxWorker.PendingResumePath(queued.Id);
+            await database.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new MessageResponse("Resume saved and queued for SharePoint upload");
         }
-        else
-        {
-            savedPath = await storage.SaveResumeAsync(user.Id, resume, cancellationToken);
-        }
+
+        var savedPath = await storage.SaveResumeAsync(user.Id, resume, cancellationToken);
         user.ResumeName = resume.FileName;
         user.ResumePath = savedPath;
         await database.SaveChangesAsync(cancellationToken);
-        return new MessageResponse($"Resume uploaded to {(sharePoint.Enabled ? "SharePoint" : "document storage")} successfully");
+        return new MessageResponse("Resume uploaded to document storage successfully");
     }
 }

@@ -8,6 +8,9 @@ namespace CandidatePortal.Api.Services;
 
 public sealed class SharePointSyncService(ISharePointClient client, PortalOptions options)
 {
+    private static readonly SemaphoreSlim SchemaLock = new(1, 1);
+    private static bool schemaVerified;
+
     public bool Enabled => options.SharePointSyncEnabled;
 
     public Task<SharePointItemResponse?> SyncCandidateAsync(User user, CancellationToken cancellationToken = default) =>
@@ -37,25 +40,64 @@ public sealed class SharePointSyncService(ISharePointClient client, PortalOption
     }
 
     public async Task<bool> DeleteJobAsync(Job job, CancellationToken cancellationToken = default)
+        => await DeleteJobByPortalIdAsync(job.Id, cancellationToken);
+
+    public async Task<bool> DeleteJobByPortalIdAsync(int jobId, CancellationToken cancellationToken = default)
     {
         if (!Enabled) return false;
-        var existing = await client.FindItemByFieldAsync(options.SharePointJobsList, "PortalJobId", job.Id.ToString(), cancellationToken);
+        var existing = await client.FindItemByFieldAsync(options.SharePointJobsList, "PortalJobId", jobId.ToString(), cancellationToken);
         if (existing is null) return false;
         await client.DeleteItemAsync(options.SharePointJobsList, int.Parse(existing.Id), cancellationToken);
         return true;
     }
 
-    public async Task<SharePointItemResponse> UploadCandidateResumeAsync(User user, string filename, byte[] content, string contentType, CancellationToken cancellationToken = default)
+    public async Task<SharePointItemResponse> UploadCandidateResumeAsync(
+        User user,
+        string filename,
+        byte[] content,
+        string contentType,
+        string? uploadKey = null,
+        CancellationToken cancellationToken = default)
     {
+        await EnsureSchemaAsync(cancellationToken);
         var candidate = await SyncCandidateAsync(user, cancellationToken)
             ?? throw new ApiException(503, "SharePoint synchronization is disabled");
-        var uploaded = await client.UploadResumeAsync(int.Parse(candidate.Id), user.Email, Path.GetFileName(filename), content, contentType, cancellationToken);
+        var uploaded = await client.UploadResumeAsync(int.Parse(candidate.Id), user.Email,
+            Path.GetFileName(filename), content, contentType, uploadKey, cancellationToken);
         if (!string.IsNullOrWhiteSpace(uploaded.WebUrl))
         {
-            await client.UpdateItemAsync(options.SharePointCandidatesList, int.Parse(candidate.Id),
-                new Dictionary<string, object?> { ["ResumeUrl"] = uploaded.WebUrl }, cancellationToken);
+            var resumeUrlField = await client.ResolveColumnNameAsync(
+                options.SharePointCandidatesList, "ResumeUrl", cancellationToken);
+            var resumeFields = new Dictionary<string, object?> { [resumeUrlField] = uploaded.WebUrl };
+            try
+            {
+                await client.UpdateItemAsync(options.SharePointCandidatesList, int.Parse(candidate.Id),
+                    resumeFields, cancellationToken);
+            }
+            catch (ApiException exception) when (IsUnknownField(exception))
+            {
+                await client.ProvisionAsync(cancellationToken);
+                await client.UpdateItemAsync(options.SharePointCandidatesList, int.Parse(candidate.Id),
+                    resumeFields, cancellationToken);
+            }
         }
         return uploaded;
+    }
+
+    private async Task EnsureSchemaAsync(CancellationToken cancellationToken)
+    {
+        if (schemaVerified) return;
+        await SchemaLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (schemaVerified) return;
+            await client.ProvisionAsync(cancellationToken);
+            schemaVerified = true;
+        }
+        finally
+        {
+            SchemaLock.Release();
+        }
     }
 
     private async Task<SharePointItemResponse?> UpsertAsync(
@@ -63,6 +105,27 @@ public sealed class SharePointSyncService(ISharePointClient client, PortalOption
         string? fallbackField = null, string? fallbackValue = null, CancellationToken cancellationToken = default)
     {
         if (!Enabled) return null;
+        try
+        {
+            return await UpsertCoreAsync(listName, keyField, keyValue, fields,
+                fallbackField, fallbackValue, cancellationToken);
+        }
+        catch (ApiException exception) when (IsUnknownField(exception))
+        {
+            await client.ProvisionAsync(cancellationToken);
+            return await UpsertCoreAsync(listName, keyField, keyValue, fields,
+                fallbackField, fallbackValue, cancellationToken);
+        }
+    }
+
+    private static bool IsUnknownField(ApiException exception) =>
+        exception.StatusCode == 502 &&
+        exception.Detail.Contains("not recognized", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<SharePointItemResponse?> UpsertCoreAsync(
+        string listName, string keyField, string keyValue, IReadOnlyDictionary<string, object?> fields,
+        string? fallbackField, string? fallbackValue, CancellationToken cancellationToken)
+    {
         var existing = await client.FindItemByFieldAsync(listName, keyField, keyValue, cancellationToken);
         if (existing is null && fallbackField is not null && fallbackValue is not null)
             existing = await client.FindItemByFieldAsync(listName, fallbackField, fallbackValue, cancellationToken);
@@ -87,7 +150,6 @@ public sealed class SharePointSyncService(ISharePointClient client, PortalOption
         ["ProfessionalTitle"] = user.Title.Trim(),
         ["About"] = user.About.Trim(),
         ["Role"] = PortalRoles.SharePointName(user.Role),
-        ["ResumeUrl"] = user.ResumePath?.StartsWith("https://", StringComparison.OrdinalIgnoreCase) == true ? user.ResumePath : null,
     };
 
     private static Dictionary<string, object?> JobFields(Job job) => new()

@@ -18,6 +18,7 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<LookupValue> LookupValues => Set<LookupValue>();
+    public DbSet<SharePointOutboxItem> SharePointOutbox => Set<SharePointOutboxItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -192,5 +193,23 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
         lookup.Property(x => x.IsActive).HasColumnName("is_active");
         lookup.HasIndex(x => new { x.Category, x.Value, x.ParentValue }).IsUnique().HasDatabaseName("uq_lookup_value");
         lookup.HasIndex(x => new { x.Category, x.IsActive, x.SortOrder }).HasDatabaseName("ix_lookup_category_active_order");
+
+        var outbox = modelBuilder.Entity<SharePointOutboxItem>();
+        outbox.ToTable("sharepoint_outbox").HasKey(x => x.Id);
+        outbox.Property(x => x.Id).HasColumnName("id");
+        outbox.Property(x => x.Operation).HasColumnName("operation").HasMaxLength(50);
+        outbox.Property(x => x.EntityId).HasColumnName("entity_id");
+        outbox.Property(x => x.FileName).HasColumnName("file_name").HasMaxLength(255);
+        outbox.Property(x => x.ContentType).HasColumnName("content_type").HasMaxLength(150);
+        outbox.Property(x => x.Content).HasColumnName("content");
+        outbox.Property(x => x.Attempts).HasColumnName("attempts");
+        outbox.Property(x => x.NextAttemptAt).HasColumnName("next_attempt_at").HasColumnType(timestampType);
+        outbox.Property(x => x.LastError).HasColumnName("last_error").HasMaxLength(2000);
+        outbox.Property(x => x.LockToken).HasColumnName("lock_token").HasMaxLength(64);
+        outbox.Property(x => x.LockedUntil).HasColumnName("locked_until").HasColumnType(timestampType);
+        outbox.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
+        outbox.Property(x => x.ProcessedAt).HasColumnName("processed_at").HasColumnType(timestampType);
+        outbox.HasIndex(x => new { x.ProcessedAt, x.NextAttemptAt })
+            .HasDatabaseName("ix_sharepoint_outbox_pending");
     }
 }

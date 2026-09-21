@@ -68,6 +68,30 @@ public sealed class DatabaseBootstrapper(
             cancellationToken);
         await database.Database.ExecuteSqlRawAsync(
             """
+            IF OBJECT_ID(N'sharepoint_outbox', N'U') IS NULL
+            BEGIN
+                CREATE TABLE sharepoint_outbox (
+                    id bigint IDENTITY(1,1) NOT NULL CONSTRAINT PK_sharepoint_outbox PRIMARY KEY,
+                    operation nvarchar(50) NOT NULL,
+                    entity_id int NOT NULL,
+                    file_name nvarchar(255) NULL,
+                    content_type nvarchar(150) NULL,
+                    content varbinary(max) NULL,
+                    attempts int NOT NULL CONSTRAINT DF_sharepoint_outbox_attempts DEFAULT 0,
+                    next_attempt_at datetime2 NOT NULL,
+                    last_error nvarchar(2000) NULL,
+                    lock_token nvarchar(64) NULL,
+                    locked_until datetime2 NULL,
+                    created_at datetime2 NOT NULL,
+                    processed_at datetime2 NULL
+                );
+                CREATE INDEX ix_sharepoint_outbox_pending
+                    ON sharepoint_outbox(processed_at, next_attempt_at);
+            END
+            """,
+            cancellationToken);
+        await database.Database.ExecuteSqlRawAsync(
+            """
             IF OBJECT_ID(N'audit_logs', N'U') IS NULL
             BEGIN
                 CREATE TABLE audit_logs (

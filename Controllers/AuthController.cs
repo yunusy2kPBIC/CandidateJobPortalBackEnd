@@ -16,7 +16,7 @@ public sealed class AuthController(
     PortalDbContext database,
     PasswordHasher passwordHasher,
     PortalSignInService signInService,
-    SharePointSyncService sharePoint,
+    SharePointOutboxService sharePointOutbox,
     MasterDataService masterData,
     VerificationEmailService verificationEmails,
     PasswordRecoveryService passwordRecovery,
@@ -132,8 +132,8 @@ public sealed class AuthController(
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         user.IsEmailVerified = true;
         verification.ConsumedAt = now;
+        sharePointOutbox.EnqueueCandidate(user.Id);
         await database.SaveChangesAsync(cancellationToken);
-        await sharePoint.SyncCandidateAsync(user, cancellationToken);
         var response = await signInService.IssueAsync(user, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         await verificationEmails.SendAccountCreatedAsync(user, cancellationToken);

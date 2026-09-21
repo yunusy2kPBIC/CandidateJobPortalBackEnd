@@ -215,7 +215,7 @@ internal static class SharePointProvisioner
     private static IReadOnlyList<Dictionary<string, object?>> CandidateColumns() =>
     [
         Text("PortalCandidateId", true), Text("Email", true), Text("FirstName", true), Text("LastName", true),
-        Text("CountryCode"), Text("Phone"), Text("Country"), Choice("Nationality", ["Saudi Arabia", "GCC", "Others"]),
+        Text("CountryCode"), Text("Phone"), Text("Country"), Text("Nationality"),
         Choice("Gender", ["Male", "Female", "Other"]), Text("City"), Text("ProfessionalTitle"), Text("About", multiline: true),
         Choice("Role", ["Candidate", "Student", "HR Admin", "Admin"], true),
         new() { ["name"] = "ResumeUrl", ["displayName"] = "ResumeUrl", ["hyperlinkOrPicture"] = new { isPicture = false } },
@@ -238,7 +238,7 @@ internal static class SharePointProvisioner
     private static IReadOnlyList<Dictionary<string, object?>> RecruitmentColumns() =>
     [
         Choice("PreferredPosition", ["Applications Project Manager", "Business Analyst", "System Administrator", "Software Developer", "IT Support Engineer"], true, true, "Preferred Position"),
-        Choice("Nationality", ["Saudi", "Indian", "Egyptian", "Pakistani", "Other"], true, true),
+        Text("Nationality", true),
         Choice("Gender", ["Male", "Female", "Other"], true),
         Choice("DriverLicenseType", ["Saudi License", "Valid GCC License", "Other License", "None"], true, displayName: "Driver License Type"),
         Text("MobileNumber", true, displayName: "Mobile Number"), Text("EmailAddress", true, displayName: "Email Address"),

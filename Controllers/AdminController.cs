@@ -15,7 +15,7 @@ namespace CandidatePortal.Api.Controllers;
 public sealed class AdminController(
     PortalDbContext database,
     PortalOptions options,
-    SharePointSyncService sharePoint,
+    SharePointOutboxService sharePointOutbox,
     AuditLogService auditLogs,
     MasterDataService masterData) : PortalControllerBase
 {
@@ -116,10 +116,10 @@ public sealed class AdminController(
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         database.Jobs.Add(job);
         await database.SaveChangesAsync(cancellationToken);
+        sharePointOutbox.EnqueueJob(job.Id);
         auditLogs.Add(CurrentUserId, "Created", "Job posting", job.Id.ToString(),
             $"Created job “{job.Title}” with expiry date {job.ExpiresAt:yyyy-MM-dd}.");
         await database.SaveChangesAsync(cancellationToken);
-        await sharePoint.SyncJobAsync(job, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return StatusCode(StatusCodes.Status201Created, job.ToResponse());
     }
@@ -169,8 +169,8 @@ public sealed class AdminController(
         }
 
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        sharePointOutbox.EnqueueJob(job.Id);
         await database.SaveChangesAsync(cancellationToken);
-        await sharePoint.SyncJobAsync(job, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return job.ToResponse();
     }
@@ -185,7 +185,7 @@ public sealed class AdminController(
             throw new ApiException(409, "This job has candidate applications and cannot be deleted. Close it instead.");
 
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
-        await sharePoint.DeleteJobAsync(job, cancellationToken);
+        sharePointOutbox.EnqueueJobDelete(job.Id);
         auditLogs.Add(CurrentUserId, "Deleted", "Job posting", job.Id.ToString(),
             $"Deleted job “{job.Title}”.");
         database.Jobs.Remove(job);
@@ -214,6 +214,8 @@ public sealed class AdminController(
             .SingleOrDefaultAsync(value => value.Id == candidateId, cancellationToken);
         if (candidate is null || candidate.Role != PortalRoles.Candidate || string.IsNullOrWhiteSpace(candidate.ResumePath))
             throw new ApiException(404, "Candidate CV not found");
+        if (candidate.ResumePath.StartsWith("sharepoint-pending", StringComparison.OrdinalIgnoreCase))
+            throw new ApiException(409, "Candidate CV is queued for SharePoint upload");
         if (Uri.TryCreate(candidate.ResumePath, UriKind.Absolute, out var uri) &&
             (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
             return Redirect(candidate.ResumePath);
@@ -282,8 +284,8 @@ public sealed class AdminController(
                 $"Changed APP-{application.Id:0000} for “{application.Job.Title}” from {previousStatus} to {payload.Status}.");
         }
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        sharePointOutbox.EnqueueApplication(application.Id);
         await database.SaveChangesAsync(cancellationToken);
-        await sharePoint.SyncApplicationAsync(application, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return ApplicationResponse(application);
     }
@@ -298,6 +300,7 @@ public sealed class AdminController(
         if (user.ResumePath.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
             user.ResumePath.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) return user.ResumePath;
         return user.ResumePath.StartsWith("sharepoint-item:", StringComparison.OrdinalIgnoreCase)
+            || user.ResumePath.StartsWith("sharepoint-pending", StringComparison.OrdinalIgnoreCase)
             ? null
             : $"/api/admin/candidates/{user.Id}/resume";
     }
