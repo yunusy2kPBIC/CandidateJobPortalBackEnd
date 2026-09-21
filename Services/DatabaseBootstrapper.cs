@@ -229,6 +229,9 @@ public sealed class DatabaseBootstrapper(
         var existing = existingRows
             .Select(value => LookupKey(value.Category, value.Value, value.ParentValue))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingCategories = existingRows
+            .Select(value => value.Category.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         void Add(string category, string value, string? parentValue, int sortOrder)
         {
@@ -253,18 +256,24 @@ public sealed class DatabaseBootstrapper(
             ("Kuwait", ["Kuwait City", "Al Ahmadi", "Hawalli"]),
             ("United States", ["New York", "Los Angeles", "Chicago", "Houston"]),
         };
-        for (var countryIndex = 0; countryIndex < locations.Length; countryIndex++)
+        if (!existingCategories.Contains(LookupCategories.Country) ||
+            !existingCategories.Contains(LookupCategories.City))
         {
-            var location = locations[countryIndex];
-            Add(LookupCategories.Country, location.Country, null, (countryIndex + 1) * 10);
-            for (var cityIndex = 0; cityIndex < location.Cities.Length; cityIndex++)
-                Add(LookupCategories.City, location.Cities[cityIndex], location.Country, (cityIndex + 1) * 10);
+            for (var countryIndex = 0; countryIndex < locations.Length; countryIndex++)
+            {
+                var location = locations[countryIndex];
+                if (!existingCategories.Contains(LookupCategories.Country))
+                    Add(LookupCategories.Country, location.Country, null, (countryIndex + 1) * 10);
+                if (!existingCategories.Contains(LookupCategories.City))
+                    for (var cityIndex = 0; cityIndex < location.Cities.Length; cityIndex++)
+                        Add(LookupCategories.City, location.Cities[cityIndex], location.Country, (cityIndex + 1) * 10);
+            }
         }
 
         var divisions = new[]
         {
-            "IT Division", "Business Division", "Marketing Division", "Transformation Office", "Strategy Division",
-            "People Division", "Finance Division", "Commercial Division", "Operations Division",
+            "Executive Management", "Finance", "Human Resource", "Information Technology", "Legal",
+            "Manufacturing", "Marketing", "QHSSE", "Sales", "Supply Chain",
         };
         var jobFunctions = new[]
         {
@@ -272,36 +281,15 @@ public sealed class DatabaseBootstrapper(
             "Human Resources", "Information Security", "Finance", "Customer Experience", "Operations",
         };
         var careerLevels = new[] { "Entry level", "Mid-level", "Senior" };
-        for (var index = 0; index < divisions.Length; index++)
-            Add(LookupCategories.Division, divisions[index], null, (index + 1) * 10);
-        for (var index = 0; index < jobFunctions.Length; index++)
-            Add(LookupCategories.JobFunction, jobFunctions[index], null, (index + 1) * 10);
-        for (var index = 0; index < careerLevels.Length; index++)
-            Add(LookupCategories.CareerLevel, careerLevels[index], null, (index + 1) * 10);
-
-        var jobValues = await database.Jobs.AsNoTracking()
-            .Select(job => new { job.Country, job.City, job.Division, job.JobFunction, job.CareerLevel })
-            .ToListAsync(cancellationToken);
-        foreach (var job in jobValues)
-        {
-            Add(LookupCategories.Country, job.Country, null, 1000);
-            Add(LookupCategories.City, job.City, job.Country, 1000);
-            Add(LookupCategories.Division, job.Division, null, 1000);
-            Add(LookupCategories.JobFunction, job.JobFunction, null, 1000);
-            Add(LookupCategories.CareerLevel, job.CareerLevel, null, 1000);
-        }
-
-        var userLocations = await database.Users.AsNoTracking()
-            .Where(user => user.Country != "")
-            .Select(user => new { user.Country, user.City })
-            .Distinct()
-            .ToListAsync(cancellationToken);
-        foreach (var location in userLocations)
-        {
-            Add(LookupCategories.Country, location.Country, null, 1000);
-            if (!string.IsNullOrWhiteSpace(location.City))
-                Add(LookupCategories.City, location.City, location.Country, 1000);
-        }
+        if (!existingCategories.Contains(LookupCategories.Division))
+            for (var index = 0; index < divisions.Length; index++)
+                Add(LookupCategories.Division, divisions[index], null, (index + 1) * 10);
+        if (!existingCategories.Contains(LookupCategories.JobFunction))
+            for (var index = 0; index < jobFunctions.Length; index++)
+                Add(LookupCategories.JobFunction, jobFunctions[index], null, (index + 1) * 10);
+        if (!existingCategories.Contains(LookupCategories.CareerLevel))
+            for (var index = 0; index < careerLevels.Length; index++)
+                Add(LookupCategories.CareerLevel, careerLevels[index], null, (index + 1) * 10);
 
         await database.SaveChangesAsync(cancellationToken);
     }
