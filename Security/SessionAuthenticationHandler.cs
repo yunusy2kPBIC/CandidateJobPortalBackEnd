@@ -17,6 +17,8 @@ public sealed class SessionAuthenticationHandler(
     PortalDbContext database)
     : AuthenticationHandler<AuthenticationSchemeOptions>(schemeOptions, logger, encoder)
 {
+    public const string SchemeName = "PortalSession";
+
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var authorization = Request.Headers.Authorization.ToString();

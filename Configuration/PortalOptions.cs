@@ -13,10 +13,7 @@ public sealed class PortalOptions
     public string BootstrapAdminPassword { get; init; } = "";
     public string BootstrapHrAdminEmail { get; init; } = "";
     public string BootstrapHrAdminPassword { get; init; } = "";
-    public string GoogleAuthClientId { get; init; } = "";
-    public string GoogleAuthClientSecret { get; init; } = "";
-    public string MicrosoftAuthClientId { get; init; } = "";
-    public string MicrosoftAuthClientSecret { get; init; } = "";
+    public bool EmailEnabled { get; init; } = true;
     public string EmailDeliveryMode { get; init; } = "development";
     public string EmailSenderAddress { get; init; } = "dev-no-reply@candidateportal.local";
     public string EmailSenderName { get; init; } = "PBICareerPosting";
@@ -56,14 +53,6 @@ public sealed class PortalOptions
     public double SharePointTimeoutSeconds { get; init; } = 30;
     public bool SharePointSyncEnabled { get; init; }
 
-    public bool GoogleAuthEnabled =>
-        !string.IsNullOrWhiteSpace(GoogleAuthClientId) &&
-        !string.IsNullOrWhiteSpace(GoogleAuthClientSecret);
-
-    public bool MicrosoftAuthEnabled =>
-        !string.IsNullOrWhiteSpace(MicrosoftAuthClientId) &&
-        !string.IsNullOrWhiteSpace(MicrosoftAuthClientSecret);
-
     public bool SharePointConfigured =>
         !string.IsNullOrWhiteSpace(SharePointTenantId) &&
         !string.IsNullOrWhiteSpace(SharePointClientId) &&
@@ -83,6 +72,13 @@ public sealed class PortalOptions
     {
         static bool Flag(IConfiguration config, string name, bool fallback = false) =>
             bool.TryParse(config[name], out var value) ? value : fallback;
+        static bool YesNoFlag(IConfiguration config, string name, bool fallback = false)
+        {
+            var value = (config[name] ?? "").Trim();
+            if (string.Equals(value, "Y", StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.Equals(value, "N", StringComparison.OrdinalIgnoreCase)) return false;
+            return bool.TryParse(value, out var parsed) ? parsed : fallback;
+        }
         static int Number(IConfiguration config, string name, int fallback) =>
             int.TryParse(config[name], out var value) ? value : fallback;
         static double DecimalNumber(IConfiguration config, string name, double fallback) =>
@@ -112,10 +108,7 @@ public sealed class PortalOptions
             BootstrapAdminPassword = configuration["BOOTSTRAP_ADMIN_PASSWORD"] ?? "",
             BootstrapHrAdminEmail = (configuration["BOOTSTRAP_HR_ADMIN_EMAIL"] ?? "").Trim().ToLowerInvariant(),
             BootstrapHrAdminPassword = configuration["BOOTSTRAP_HR_ADMIN_PASSWORD"] ?? "",
-            GoogleAuthClientId = configuration["GOOGLE_AUTH_CLIENT_ID"] ?? "",
-            GoogleAuthClientSecret = configuration["GOOGLE_AUTH_CLIENT_SECRET"] ?? "",
-            MicrosoftAuthClientId = configuration["MICROSOFT_AUTH_CLIENT_ID"] ?? "",
-            MicrosoftAuthClientSecret = configuration["MICROSOFT_AUTH_CLIENT_SECRET"] ?? "",
+            EmailEnabled = YesNoFlag(configuration, "EMAIL_ENABLED", true),
             EmailDeliveryMode = (configuration["EMAIL_DELIVERY_MODE"] ?? "development").Trim().ToLowerInvariant(),
             EmailSenderAddress = (configuration["EMAIL_SENDER_ADDRESS"] ?? "dev-no-reply@candidateportal.local").Trim(),
             EmailSenderName = (configuration["EMAIL_SENDER_NAME"] ?? "PBICareerPosting").Trim(),

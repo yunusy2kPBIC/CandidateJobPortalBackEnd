@@ -9,8 +9,6 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
-    public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
-    public DbSet<ExternalAuthCode> ExternalAuthCodes => Set<ExternalAuthCode>();
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<PasswordReset> PasswordResets => Set<PasswordReset>();
     public DbSet<UserConsent> UserConsents => Set<UserConsent>();
@@ -87,26 +85,6 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
         session.Property(x => x.ExpiresAt).HasColumnName("expires_at").HasColumnType(timestampType);
         session.Property(x => x.RevokedAt).HasColumnName("revoked_at").HasColumnType(timestampType);
         session.HasOne(x => x.User).WithMany(x => x.AuthSessions).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
-
-        var externalLogin = modelBuilder.Entity<ExternalLogin>();
-        externalLogin.ToTable("external_logins").HasKey(x => x.Id);
-        externalLogin.Property(x => x.Id).HasColumnName("id");
-        externalLogin.Property(x => x.UserId).HasColumnName("user_id");
-        externalLogin.Property(x => x.Provider).HasColumnName("provider").HasMaxLength(30);
-        externalLogin.Property(x => x.ProviderUserId).HasColumnName("provider_user_id").HasMaxLength(255);
-        externalLogin.Property(x => x.Email).HasColumnName("email").HasMaxLength(255);
-        externalLogin.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
-        externalLogin.HasIndex(x => new { x.Provider, x.ProviderUserId }).IsUnique().HasDatabaseName("uq_external_login");
-        externalLogin.HasOne(x => x.User).WithMany(x => x.ExternalLogins).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
-
-        var externalAuthCode = modelBuilder.Entity<ExternalAuthCode>();
-        externalAuthCode.ToTable("external_auth_codes").HasKey(x => x.CodeHash);
-        externalAuthCode.Property(x => x.CodeHash).HasColumnName("code_hash").HasMaxLength(64);
-        externalAuthCode.Property(x => x.UserId).HasColumnName("user_id");
-        externalAuthCode.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
-        externalAuthCode.Property(x => x.ExpiresAt).HasColumnName("expires_at").HasColumnType(timestampType);
-        externalAuthCode.HasIndex(x => x.ExpiresAt);
-        externalAuthCode.HasOne(x => x.User).WithMany(x => x.ExternalAuthCodes).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
 
         var emailVerification = modelBuilder.Entity<EmailVerification>();
         emailVerification.ToTable("email_verifications").HasKey(x => x.UserId);

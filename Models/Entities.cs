@@ -27,8 +27,6 @@ public sealed class User
     public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
     public List<Application> Applications { get; set; } = [];
     public List<AuthSession> AuthSessions { get; set; } = [];
-    public List<ExternalLogin> ExternalLogins { get; set; } = [];
-    public List<ExternalAuthCode> ExternalAuthCodes { get; set; } = [];
     public EmailVerification? EmailVerification { get; set; }
     public PasswordReset? PasswordReset { get; set; }
     public List<UserConsent> Consents { get; set; } = [];
@@ -88,26 +86,6 @@ public sealed class AuthSession
     public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
     public DateTime ExpiresAt { get; set; }
     public DateTime? RevokedAt { get; set; }
-    public User User { get; set; } = null!;
-}
-
-public sealed class ExternalLogin
-{
-    public int Id { get; set; }
-    public int UserId { get; set; }
-    public string Provider { get; set; } = "";
-    public string ProviderUserId { get; set; } = "";
-    public string Email { get; set; } = "";
-    public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
-    public User User { get; set; } = null!;
-}
-
-public sealed class ExternalAuthCode
-{
-    public string CodeHash { get; set; } = "";
-    public int UserId { get; set; }
-    public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
-    public DateTime ExpiresAt { get; set; }
     public User User { get; set; } = null!;
 }
 
