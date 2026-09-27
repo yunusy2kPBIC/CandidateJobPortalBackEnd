@@ -47,6 +47,30 @@ public sealed class StudentCooperativeTrainingController(
         return StatusCode(StatusCodes.Status201Created, created);
     }
 
+    [HttpPut]
+    [RequestSizeLimit(21 * 1024 * 1024)]
+    public async Task<CooperativeTrainingResponse> Update(
+        [FromForm] string payload,
+        [FromForm] IFormFile? transcript,
+        [FromForm(Name = "university_request")] IFormFile? universityRequest,
+        CancellationToken cancellationToken)
+    {
+        var user = await CurrentStudentAsync(cancellationToken);
+        var existing = await submissions.FindLatestByEmailAsync(user.Email, cancellationToken)
+            ?? throw new ApiException(404, "No cooperative training request was found to edit");
+        var request = submissions.ParsePayload(payload);
+        return await submissions.UpdateAsync(
+            existing,
+            request,
+            transcript,
+            universityRequest,
+            CurrentUserId,
+            user.Email,
+            user.FirstName,
+            user.LastName,
+            cancellationToken);
+    }
+
     private async Task<Models.User> CurrentStudentAsync(CancellationToken cancellationToken) =>
         await database.Users.AsNoTracking().SingleOrDefaultAsync(
             user => user.Id == CurrentUserId && user.Role == PortalRoles.Student,
