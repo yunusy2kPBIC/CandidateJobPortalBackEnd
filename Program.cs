@@ -6,10 +6,8 @@ using CandidatePortal.Api.Infrastructure;
 using CandidatePortal.Api.Security;
 using CandidatePortal.Api.Services;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 
 var seedOnly = args.Any(value => string.Equals(value, "--seed-only", StringComparison.OrdinalIgnoreCase));
@@ -44,64 +42,11 @@ builder.Services.AddScoped<CooperativeTrainingSubmissionService>();
 builder.Services.AddHttpClient<ISharePointClient, GraphSharePointClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(portalOptions.SharePointTimeoutSeconds));
 
-var authentication = builder.Services
-    .AddAuthentication(options =>
-    {
-        options.DefaultAuthenticateScheme = ExternalAuthSchemes.Portal;
-        options.DefaultChallengeScheme = ExternalAuthSchemes.Portal;
-    })
-    .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(ExternalAuthSchemes.Portal, null)
-    .AddCookie(ExternalAuthSchemes.ExternalCookie, options =>
-    {
-        options.Cookie.Name = "candidate_portal_external";
-        options.Cookie.HttpOnly = true;
-        options.Cookie.IsEssential = true;
-        options.Cookie.SameSite = SameSiteMode.Lax;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-        options.ExpireTimeSpan = TimeSpan.FromMinutes(10);
-    });
-if (portalOptions.GoogleAuthEnabled)
-{
-    authentication.AddGoogle(ExternalAuthSchemes.Google, options =>
-    {
-        options.SignInScheme = ExternalAuthSchemes.ExternalCookie;
-        options.ClientId = portalOptions.GoogleAuthClientId;
-        options.ClientSecret = portalOptions.GoogleAuthClientSecret;
-        options.CallbackPath = "/signin-google";
-        options.SaveTokens = false;
-        options.Events.OnRemoteFailure = context =>
-        {
-            context.HandleResponse();
-            var returnUrl = context.Properties?.Items.TryGetValue("return_url", out var value) == true
-                ? value
-                : $"{portalOptions.FrontendOrigins.First()}/auth/callback";
-            context.Response.Redirect(QueryHelpers.AddQueryString(
-                returnUrl!, "error", "Google sign-in was cancelled or could not be completed."));
-            return Task.CompletedTask;
-        };
-    });
-}
-if (portalOptions.MicrosoftAuthEnabled)
-{
-    authentication.AddMicrosoftAccount(ExternalAuthSchemes.Microsoft, options =>
-    {
-        options.SignInScheme = ExternalAuthSchemes.ExternalCookie;
-        options.ClientId = portalOptions.MicrosoftAuthClientId;
-        options.ClientSecret = portalOptions.MicrosoftAuthClientSecret;
-        options.CallbackPath = "/signin-microsoft";
-        options.SaveTokens = false;
-        options.Events.OnRemoteFailure = context =>
-        {
-            context.HandleResponse();
-            var returnUrl = context.Properties?.Items.TryGetValue("return_url", out var value) == true
-                ? value
-                : $"{portalOptions.FrontendOrigins.First()}/auth/callback";
-            context.Response.Redirect(QueryHelpers.AddQueryString(
-                returnUrl!, "error", "Microsoft sign-in was cancelled or could not be completed."));
-            return Task.CompletedTask;
-        };
-    });
-}
+builder.Services
+    .AddAuthentication(SessionAuthenticationHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, SessionAuthenticationHandler>(
+        SessionAuthenticationHandler.SchemeName,
+        null);
 builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(options =>
 {

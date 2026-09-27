@@ -32,6 +32,16 @@ public sealed class SmtpEmailSender(
         string body,
         CancellationToken cancellationToken = default)
     {
+        if (!options.EmailEnabled)
+        {
+            logger.LogInformation(
+                "EMAIL DISABLED: skipped message from {Sender} to {Recipient}. Subject: {Subject}",
+                options.EmailSenderAddress,
+                recipientAddress,
+                subject);
+            return;
+        }
+
         if (string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase))
         {
             logger.LogInformation(

@@ -112,42 +112,6 @@ public sealed class DatabaseBootstrapper(
             cancellationToken);
         await database.Database.ExecuteSqlRawAsync(
             """
-            IF OBJECT_ID(N'external_logins', N'U') IS NULL
-            BEGIN
-                CREATE TABLE external_logins (
-                    id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_external_logins PRIMARY KEY,
-                    user_id int NOT NULL,
-                    provider nvarchar(30) NOT NULL,
-                    provider_user_id nvarchar(255) NOT NULL,
-                    email nvarchar(255) NOT NULL,
-                    created_at datetime2 NOT NULL,
-                    CONSTRAINT FK_external_logins_users_user_id
-                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                    CONSTRAINT uq_external_login UNIQUE (provider, provider_user_id)
-                );
-                CREATE INDEX IX_external_logins_user_id ON external_logins(user_id);
-            END
-            """,
-            cancellationToken);
-        await database.Database.ExecuteSqlRawAsync(
-            """
-            IF OBJECT_ID(N'external_auth_codes', N'U') IS NULL
-            BEGIN
-                CREATE TABLE external_auth_codes (
-                    code_hash nvarchar(64) NOT NULL CONSTRAINT PK_external_auth_codes PRIMARY KEY,
-                    user_id int NOT NULL,
-                    created_at datetime2 NOT NULL,
-                    expires_at datetime2 NOT NULL,
-                    CONSTRAINT FK_external_auth_codes_users_user_id
-                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                );
-                CREATE INDEX IX_external_auth_codes_user_id ON external_auth_codes(user_id);
-                CREATE INDEX IX_external_auth_codes_expires_at ON external_auth_codes(expires_at);
-            END
-            """,
-            cancellationToken);
-        await database.Database.ExecuteSqlRawAsync(
-            """
             IF OBJECT_ID(N'lookup_values', N'U') IS NULL
             BEGIN
                 CREATE TABLE lookup_values (
