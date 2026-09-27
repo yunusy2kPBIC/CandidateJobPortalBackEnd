@@ -111,6 +111,78 @@ public sealed class CooperativeTrainingSubmissionService(
         }
     }
 
+    public async Task<CooperativeTrainingResponse> UpdateAsync(
+        CooperativeTrainingResponse existing,
+        CooperativeTrainingCreateRequest request,
+        IFormFile? transcript,
+        IFormFile? universityRequest,
+        int actorUserId,
+        string ownerEmail,
+        string ownerFirstName,
+        string ownerLastName,
+        CancellationToken cancellationToken = default)
+    {
+        if (!int.TryParse(existing.Id, out var requestId))
+            throw new ApiException(400, "The cooperative training request has an invalid reference");
+
+        var applicantEmail = ownerEmail.Trim().ToLowerInvariant();
+        if (!string.Equals(existing.Email, applicantEmail, StringComparison.OrdinalIgnoreCase))
+            throw new ApiException(403, "You can only edit your own cooperative training request");
+
+        var fields = request.ToFields();
+        fields["Title"] = $"{ownerFirstName.Trim()} {ownerLastName.Trim()}".Trim();
+        fields["FirstName"] = ownerFirstName.Trim();
+        fields["LastName"] = ownerLastName.Trim();
+        fields["Email"] = applicantEmail;
+
+        var uploadedDocumentIds = new List<int>();
+        var requestUpdated = false;
+        try
+        {
+            if (transcript is not null)
+            {
+                var content = await ReadDocumentAsync(transcript, cancellationToken);
+                var uploaded = await client.UploadCooperativeTrainingDocumentAsync(
+                    requestId, applicantEmail, "Transcript", transcript.FileName, content,
+                    transcript.ContentType ?? "application/octet-stream", cancellationToken);
+                uploadedDocumentIds.Add(int.Parse(uploaded.Id));
+                fields["TranscriptUrl"] = uploaded.WebUrl;
+                fields["TranscriptFileName"] = transcript.FileName;
+            }
+
+            if (universityRequest is not null)
+            {
+                var content = await ReadDocumentAsync(universityRequest, cancellationToken);
+                var uploaded = await client.UploadCooperativeTrainingDocumentAsync(
+                    requestId, applicantEmail, "University Request", universityRequest.FileName, content,
+                    universityRequest.ContentType ?? "application/octet-stream", cancellationToken);
+                uploadedDocumentIds.Add(int.Parse(uploaded.Id));
+                fields["UniversityRequestUrl"] = uploaded.WebUrl;
+                fields["UniversityRequestFileName"] = universityRequest.FileName;
+            }
+
+            var updated = await client.UpdateItemAsync(
+                options.SharePointCooperativeTrainingList, requestId, fields, cancellationToken);
+            requestUpdated = true;
+            await auditLogs.RecordAsync(actorUserId, "Updated", "Cooperative training request", requestId.ToString(),
+                $"Student updated cooperative training request for {ownerFirstName.Trim()} {ownerLastName.Trim()}.",
+                cancellationToken);
+            return CooperativeTrainingResponse.FromItem(updated);
+        }
+        catch
+        {
+            if (!requestUpdated)
+            {
+                foreach (var documentId in uploadedDocumentIds)
+                {
+                    try { await client.DeleteItemAsync(options.SharePointCooperativeTrainingDocumentsLibrary, documentId, cancellationToken); }
+                    catch { /* Preserve the original failure. */ }
+                }
+            }
+            throw;
+        }
+    }
+
     private static async Task<byte[]> ReadDocumentAsync(IFormFile upload, CancellationToken cancellationToken)
     {
         var extension = Path.GetExtension(upload.FileName).ToLowerInvariant();
