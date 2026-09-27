@@ -130,13 +130,6 @@ public sealed record UserResponse(
 
 public sealed record AuthResponse(string AccessToken, string TokenType, UserResponse User);
 
-public sealed record ExternalAuthProvidersResponse(bool Google, bool Microsoft);
-
-public sealed class ExternalAuthExchangeRequest
-{
-    [Required, MinLength(20), MaxLength(500)] public string Code { get; init; } = "";
-}
-
 public sealed record JobResponse(
     int Id,
     string Title,

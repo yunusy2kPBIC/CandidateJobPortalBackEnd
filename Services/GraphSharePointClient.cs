@@ -102,6 +102,25 @@ public sealed class GraphSharePointClient(HttpClient httpClient, PortalOptions o
     public Task<SharePointSetupResponse> ProvisionAsync(CancellationToken cancellationToken = default) =>
         SharePointProvisioner.ProvisionAsync(this, options, cancellationToken);
 
+    public async Task<string> ResolveColumnNameAsync(
+        string listName, string expectedName, CancellationToken cancellationToken = default)
+    {
+        var site = await GetSiteIdAsync(cancellationToken);
+        var list = await GetListAsync(listName, cancellationToken);
+        var columns = await GetCollectionAsync(
+            $"/sites/{Uri.EscapeDataString(site)}/lists/{Uri.EscapeDataString(list.Id)}/columns?" +
+            "$select=name,displayName", cancellationToken);
+        var exact = columns.FirstOrDefault(column =>
+            string.Equals(GetString(column, "name"), expectedName, StringComparison.OrdinalIgnoreCase));
+        if (exact.ValueKind != JsonValueKind.Undefined)
+            return GetString(exact, "name") ?? expectedName;
+        var displayMatch = columns.FirstOrDefault(column =>
+            string.Equals(GetString(column, "displayName"), expectedName, StringComparison.OrdinalIgnoreCase));
+        return displayMatch.ValueKind == JsonValueKind.Undefined
+            ? expectedName
+            : GetString(displayMatch, "name") ?? expectedName;
+    }
+
     public async Task<IReadOnlyList<SharePointItemResponse>> ListItemsAsync(string listName, CancellationToken cancellationToken = default)
     {
         var list = await GetListAsync(listName, cancellationToken);
@@ -163,9 +182,11 @@ public sealed class GraphSharePointClient(HttpClient httpClient, PortalOptions o
         using var _ = await SendAsync(HttpMethod.Delete, $"/sites/{site}/lists/{listId}/items/{itemId}", null, null, cancellationToken);
     }
 
-    public async Task<SharePointItemResponse> UploadResumeAsync(int candidateItemId, string candidateEmail, string filename, byte[] content, string contentType, CancellationToken cancellationToken = default)
+    public async Task<SharePointItemResponse> UploadResumeAsync(int candidateItemId, string candidateEmail, string filename, byte[] content, string contentType, string? uploadKey = null, CancellationToken cancellationToken = default)
     {
-        var storedName = $"{candidateItemId}-{Guid.NewGuid():N}-{Path.GetFileName(filename)}";
+        var storedName = string.IsNullOrWhiteSpace(uploadKey)
+            ? $"{candidateItemId}-{Guid.NewGuid():N}-{Path.GetFileName(filename)}"
+            : $"{candidateItemId}-outbox-{uploadKey}-{Path.GetFileName(filename)}";
         var (driveItem, listItemId) = await UploadLibraryFileAsync(options.SharePointResumesLibrary, options.SharePointDriveId, storedName, content, contentType, cancellationToken);
         var uploaded = await UpdateItemAsync(options.SharePointResumesLibrary, listItemId, new Dictionary<string, object?>
         {

@@ -62,7 +62,7 @@ public sealed class VerificationEmailService(
             user.Email,
             verification.ExpiresAt,
             verification.ResendAvailableAt,
-            IsDevelopmentDelivery && options.ExposeDevelopmentVerificationCode ? code : null);
+            ShouldExposeCode ? code : null);
     }
 
     public bool Matches(int userId, string code, string expectedHash)
@@ -78,6 +78,8 @@ public sealed class VerificationEmailService(
         return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{userId}:{code}")));
     }
 
-    private bool IsDevelopmentDelivery =>
-        string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase);
+    private bool ShouldExposeCode =>
+        !options.EmailEnabled ||
+        (string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase) &&
+         options.ExposeDevelopmentVerificationCode);
 }

@@ -75,7 +75,8 @@ public sealed class SharePointController(
             var content = await System.IO.File.ReadAllBytesAsync(candidate.ResumePath, cancellationToken);
             var uploaded = await synchronization.UploadCandidateResumeAsync(
                 candidate, candidate.ResumeName ?? Path.GetFileName(candidate.ResumePath), content,
-                ContentType(candidate.ResumeName ?? candidate.ResumePath), cancellationToken);
+                ContentType(candidate.ResumeName ?? candidate.ResumePath),
+                cancellationToken: cancellationToken);
             candidate.ResumePath = uploaded.WebUrl ?? $"sharepoint-item:{uploaded.Id}";
             uploadedResumes++;
         }
@@ -429,7 +430,8 @@ public sealed class SharePointController(
         await resume.CopyToAsync(stream, cancellationToken);
         var uploaded = await client.UploadResumeAsync(
             candidateItemId, candidateEmail.Trim().ToLowerInvariant(), resume.FileName,
-            stream.ToArray(), resume.ContentType ?? "application/octet-stream", cancellationToken);
+            stream.ToArray(), resume.ContentType ?? "application/octet-stream",
+            cancellationToken: cancellationToken);
         await auditLogs.RecordAsync(CurrentUserId, "Uploaded", "SharePoint resume", uploaded.Id,
             $"Uploaded a resume for {candidateEmail.Trim().ToLowerInvariant()}.", cancellationToken);
         return StatusCode(StatusCodes.Status201Created, uploaded);

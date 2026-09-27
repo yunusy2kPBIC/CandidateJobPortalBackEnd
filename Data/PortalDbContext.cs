@@ -9,8 +9,6 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
-    public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
-    public DbSet<ExternalAuthCode> ExternalAuthCodes => Set<ExternalAuthCode>();
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<PasswordReset> PasswordResets => Set<PasswordReset>();
     public DbSet<UserConsent> UserConsents => Set<UserConsent>();
@@ -18,6 +16,7 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<LookupValue> LookupValues => Set<LookupValue>();
+    public DbSet<SharePointOutboxItem> SharePointOutbox => Set<SharePointOutboxItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -86,26 +85,6 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
         session.Property(x => x.ExpiresAt).HasColumnName("expires_at").HasColumnType(timestampType);
         session.Property(x => x.RevokedAt).HasColumnName("revoked_at").HasColumnType(timestampType);
         session.HasOne(x => x.User).WithMany(x => x.AuthSessions).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
-
-        var externalLogin = modelBuilder.Entity<ExternalLogin>();
-        externalLogin.ToTable("external_logins").HasKey(x => x.Id);
-        externalLogin.Property(x => x.Id).HasColumnName("id");
-        externalLogin.Property(x => x.UserId).HasColumnName("user_id");
-        externalLogin.Property(x => x.Provider).HasColumnName("provider").HasMaxLength(30);
-        externalLogin.Property(x => x.ProviderUserId).HasColumnName("provider_user_id").HasMaxLength(255);
-        externalLogin.Property(x => x.Email).HasColumnName("email").HasMaxLength(255);
-        externalLogin.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
-        externalLogin.HasIndex(x => new { x.Provider, x.ProviderUserId }).IsUnique().HasDatabaseName("uq_external_login");
-        externalLogin.HasOne(x => x.User).WithMany(x => x.ExternalLogins).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
-
-        var externalAuthCode = modelBuilder.Entity<ExternalAuthCode>();
-        externalAuthCode.ToTable("external_auth_codes").HasKey(x => x.CodeHash);
-        externalAuthCode.Property(x => x.CodeHash).HasColumnName("code_hash").HasMaxLength(64);
-        externalAuthCode.Property(x => x.UserId).HasColumnName("user_id");
-        externalAuthCode.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
-        externalAuthCode.Property(x => x.ExpiresAt).HasColumnName("expires_at").HasColumnType(timestampType);
-        externalAuthCode.HasIndex(x => x.ExpiresAt);
-        externalAuthCode.HasOne(x => x.User).WithMany(x => x.ExternalAuthCodes).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
 
         var emailVerification = modelBuilder.Entity<EmailVerification>();
         emailVerification.ToTable("email_verifications").HasKey(x => x.UserId);
@@ -192,5 +171,23 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
         lookup.Property(x => x.IsActive).HasColumnName("is_active");
         lookup.HasIndex(x => new { x.Category, x.Value, x.ParentValue }).IsUnique().HasDatabaseName("uq_lookup_value");
         lookup.HasIndex(x => new { x.Category, x.IsActive, x.SortOrder }).HasDatabaseName("ix_lookup_category_active_order");
+
+        var outbox = modelBuilder.Entity<SharePointOutboxItem>();
+        outbox.ToTable("sharepoint_outbox").HasKey(x => x.Id);
+        outbox.Property(x => x.Id).HasColumnName("id");
+        outbox.Property(x => x.Operation).HasColumnName("operation").HasMaxLength(50);
+        outbox.Property(x => x.EntityId).HasColumnName("entity_id");
+        outbox.Property(x => x.FileName).HasColumnName("file_name").HasMaxLength(255);
+        outbox.Property(x => x.ContentType).HasColumnName("content_type").HasMaxLength(150);
+        outbox.Property(x => x.Content).HasColumnName("content");
+        outbox.Property(x => x.Attempts).HasColumnName("attempts");
+        outbox.Property(x => x.NextAttemptAt).HasColumnName("next_attempt_at").HasColumnType(timestampType);
+        outbox.Property(x => x.LastError).HasColumnName("last_error").HasMaxLength(2000);
+        outbox.Property(x => x.LockToken).HasColumnName("lock_token").HasMaxLength(64);
+        outbox.Property(x => x.LockedUntil).HasColumnName("locked_until").HasColumnType(timestampType);
+        outbox.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
+        outbox.Property(x => x.ProcessedAt).HasColumnName("processed_at").HasColumnType(timestampType);
+        outbox.HasIndex(x => new { x.ProcessedAt, x.NextAttemptAt })
+            .HasDatabaseName("ix_sharepoint_outbox_pending");
     }
 }

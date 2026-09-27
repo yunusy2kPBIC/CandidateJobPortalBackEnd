@@ -27,8 +27,6 @@ public sealed class User
     public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
     public List<Application> Applications { get; set; } = [];
     public List<AuthSession> AuthSessions { get; set; } = [];
-    public List<ExternalLogin> ExternalLogins { get; set; } = [];
-    public List<ExternalAuthCode> ExternalAuthCodes { get; set; } = [];
     public EmailVerification? EmailVerification { get; set; }
     public PasswordReset? PasswordReset { get; set; }
     public List<UserConsent> Consents { get; set; } = [];
@@ -88,26 +86,6 @@ public sealed class AuthSession
     public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
     public DateTime ExpiresAt { get; set; }
     public DateTime? RevokedAt { get; set; }
-    public User User { get; set; } = null!;
-}
-
-public sealed class ExternalLogin
-{
-    public int Id { get; set; }
-    public int UserId { get; set; }
-    public string Provider { get; set; } = "";
-    public string ProviderUserId { get; set; } = "";
-    public string Email { get; set; } = "";
-    public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
-    public User User { get; set; } = null!;
-}
-
-public sealed class ExternalAuthCode
-{
-    public string CodeHash { get; set; } = "";
-    public int UserId { get; set; }
-    public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
-    public DateTime ExpiresAt { get; set; }
     public User User { get; set; } = null!;
 }
 
@@ -190,4 +168,30 @@ public sealed class LookupValue
     public string? ParentValue { get; set; }
     public int SortOrder { get; set; }
     public bool IsActive { get; set; } = true;
+}
+
+public static class SharePointOutboxOperations
+{
+    public const string CandidateUpsert = "candidate-upsert";
+    public const string JobUpsert = "job-upsert";
+    public const string JobDelete = "job-delete";
+    public const string ApplicationUpsert = "application-upsert";
+    public const string ResumeUpload = "resume-upload";
+}
+
+public sealed class SharePointOutboxItem
+{
+    public long Id { get; set; }
+    public string Operation { get; set; } = "";
+    public int EntityId { get; set; }
+    public string? FileName { get; set; }
+    public string? ContentType { get; set; }
+    public byte[]? Content { get; set; }
+    public int Attempts { get; set; }
+    public DateTime NextAttemptAt { get; set; } = PortalClock.UtcNow();
+    public string? LastError { get; set; }
+    public string? LockToken { get; set; }
+    public DateTime? LockedUntil { get; set; }
+    public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
+    public DateTime? ProcessedAt { get; set; }
 }

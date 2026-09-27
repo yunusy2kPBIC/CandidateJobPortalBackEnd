@@ -13,7 +13,7 @@ namespace CandidatePortal.Api.Controllers;
 [Route("api")]
 public sealed class JobsController(
     PortalDbContext database,
-    SharePointSyncService sharePoint,
+    SharePointOutboxService sharePointOutbox,
     MasterDataService masterData) : PortalControllerBase
 {
     [AllowAnonymous, HttpGet("jobs")]
@@ -116,7 +116,8 @@ public sealed class JobsController(
         try
         {
             await database.SaveChangesAsync(cancellationToken);
-            await sharePoint.SyncApplicationAsync(application, cancellationToken);
+            sharePointOutbox.EnqueueApplication(application.Id);
+            await database.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
         }
         catch (DbUpdateException error)

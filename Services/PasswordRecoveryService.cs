@@ -68,7 +68,7 @@ public sealed class PasswordRecoveryService(
             user.Email,
             reset.ExpiresAt,
             reset.ResendAvailableAt,
-            IsDevelopmentDelivery && options.ExposeDevelopmentVerificationCode ? code : null);
+            ShouldExposeCode ? code : null);
     }
 
     public bool Matches(int userId, string code, string expectedHash)
@@ -93,6 +93,8 @@ public sealed class PasswordRecoveryService(
         return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"password-reset:{userId}:{code}")));
     }
 
-    private bool IsDevelopmentDelivery =>
-        string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase);
+    private bool ShouldExposeCode =>
+        !options.EmailEnabled ||
+        (string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase) &&
+         options.ExposeDevelopmentVerificationCode);
 }

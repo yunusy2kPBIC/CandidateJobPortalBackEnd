@@ -68,6 +68,30 @@ public sealed class DatabaseBootstrapper(
             cancellationToken);
         await database.Database.ExecuteSqlRawAsync(
             """
+            IF OBJECT_ID(N'sharepoint_outbox', N'U') IS NULL
+            BEGIN
+                CREATE TABLE sharepoint_outbox (
+                    id bigint IDENTITY(1,1) NOT NULL CONSTRAINT PK_sharepoint_outbox PRIMARY KEY,
+                    operation nvarchar(50) NOT NULL,
+                    entity_id int NOT NULL,
+                    file_name nvarchar(255) NULL,
+                    content_type nvarchar(150) NULL,
+                    content varbinary(max) NULL,
+                    attempts int NOT NULL CONSTRAINT DF_sharepoint_outbox_attempts DEFAULT 0,
+                    next_attempt_at datetime2 NOT NULL,
+                    last_error nvarchar(2000) NULL,
+                    lock_token nvarchar(64) NULL,
+                    locked_until datetime2 NULL,
+                    created_at datetime2 NOT NULL,
+                    processed_at datetime2 NULL
+                );
+                CREATE INDEX ix_sharepoint_outbox_pending
+                    ON sharepoint_outbox(processed_at, next_attempt_at);
+            END
+            """,
+            cancellationToken);
+        await database.Database.ExecuteSqlRawAsync(
+            """
             IF OBJECT_ID(N'audit_logs', N'U') IS NULL
             BEGIN
                 CREATE TABLE audit_logs (
@@ -83,42 +107,6 @@ public sealed class DatabaseBootstrapper(
                 );
                 CREATE INDEX IX_audit_logs_admin_user_id ON audit_logs(admin_user_id);
                 CREATE INDEX IX_audit_logs_created_at ON audit_logs(created_at);
-            END
-            """,
-            cancellationToken);
-        await database.Database.ExecuteSqlRawAsync(
-            """
-            IF OBJECT_ID(N'external_logins', N'U') IS NULL
-            BEGIN
-                CREATE TABLE external_logins (
-                    id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_external_logins PRIMARY KEY,
-                    user_id int NOT NULL,
-                    provider nvarchar(30) NOT NULL,
-                    provider_user_id nvarchar(255) NOT NULL,
-                    email nvarchar(255) NOT NULL,
-                    created_at datetime2 NOT NULL,
-                    CONSTRAINT FK_external_logins_users_user_id
-                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                    CONSTRAINT uq_external_login UNIQUE (provider, provider_user_id)
-                );
-                CREATE INDEX IX_external_logins_user_id ON external_logins(user_id);
-            END
-            """,
-            cancellationToken);
-        await database.Database.ExecuteSqlRawAsync(
-            """
-            IF OBJECT_ID(N'external_auth_codes', N'U') IS NULL
-            BEGIN
-                CREATE TABLE external_auth_codes (
-                    code_hash nvarchar(64) NOT NULL CONSTRAINT PK_external_auth_codes PRIMARY KEY,
-                    user_id int NOT NULL,
-                    created_at datetime2 NOT NULL,
-                    expires_at datetime2 NOT NULL,
-                    CONSTRAINT FK_external_auth_codes_users_user_id
-                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-                );
-                CREATE INDEX IX_external_auth_codes_user_id ON external_auth_codes(user_id);
-                CREATE INDEX IX_external_auth_codes_expires_at ON external_auth_codes(expires_at);
             END
             """,
             cancellationToken);
@@ -205,6 +193,9 @@ public sealed class DatabaseBootstrapper(
         var existing = existingRows
             .Select(value => LookupKey(value.Category, value.Value, value.ParentValue))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingCategories = existingRows
+            .Select(value => value.Category.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         void Add(string category, string value, string? parentValue, int sortOrder)
         {
@@ -229,18 +220,24 @@ public sealed class DatabaseBootstrapper(
             ("Kuwait", ["Kuwait City", "Al Ahmadi", "Hawalli"]),
             ("United States", ["New York", "Los Angeles", "Chicago", "Houston"]),
         };
-        for (var countryIndex = 0; countryIndex < locations.Length; countryIndex++)
+        if (!existingCategories.Contains(LookupCategories.Country) ||
+            !existingCategories.Contains(LookupCategories.City))
         {
-            var location = locations[countryIndex];
-            Add(LookupCategories.Country, location.Country, null, (countryIndex + 1) * 10);
-            for (var cityIndex = 0; cityIndex < location.Cities.Length; cityIndex++)
-                Add(LookupCategories.City, location.Cities[cityIndex], location.Country, (cityIndex + 1) * 10);
+            for (var countryIndex = 0; countryIndex < locations.Length; countryIndex++)
+            {
+                var location = locations[countryIndex];
+                if (!existingCategories.Contains(LookupCategories.Country))
+                    Add(LookupCategories.Country, location.Country, null, (countryIndex + 1) * 10);
+                if (!existingCategories.Contains(LookupCategories.City))
+                    for (var cityIndex = 0; cityIndex < location.Cities.Length; cityIndex++)
+                        Add(LookupCategories.City, location.Cities[cityIndex], location.Country, (cityIndex + 1) * 10);
+            }
         }
 
         var divisions = new[]
         {
-            "IT Division", "Business Division", "Marketing Division", "Transformation Office", "Strategy Division",
-            "People Division", "Finance Division", "Commercial Division", "Operations Division",
+            "Executive Management", "Finance", "Human Resource", "Information Technology", "Legal",
+            "Manufacturing", "Marketing", "QHSSE", "Sales", "Supply Chain",
         };
         var jobFunctions = new[]
         {
@@ -248,36 +245,15 @@ public sealed class DatabaseBootstrapper(
             "Human Resources", "Information Security", "Finance", "Customer Experience", "Operations",
         };
         var careerLevels = new[] { "Entry level", "Mid-level", "Senior" };
-        for (var index = 0; index < divisions.Length; index++)
-            Add(LookupCategories.Division, divisions[index], null, (index + 1) * 10);
-        for (var index = 0; index < jobFunctions.Length; index++)
-            Add(LookupCategories.JobFunction, jobFunctions[index], null, (index + 1) * 10);
-        for (var index = 0; index < careerLevels.Length; index++)
-            Add(LookupCategories.CareerLevel, careerLevels[index], null, (index + 1) * 10);
-
-        var jobValues = await database.Jobs.AsNoTracking()
-            .Select(job => new { job.Country, job.City, job.Division, job.JobFunction, job.CareerLevel })
-            .ToListAsync(cancellationToken);
-        foreach (var job in jobValues)
-        {
-            Add(LookupCategories.Country, job.Country, null, 1000);
-            Add(LookupCategories.City, job.City, job.Country, 1000);
-            Add(LookupCategories.Division, job.Division, null, 1000);
-            Add(LookupCategories.JobFunction, job.JobFunction, null, 1000);
-            Add(LookupCategories.CareerLevel, job.CareerLevel, null, 1000);
-        }
-
-        var userLocations = await database.Users.AsNoTracking()
-            .Where(user => user.Country != "")
-            .Select(user => new { user.Country, user.City })
-            .Distinct()
-            .ToListAsync(cancellationToken);
-        foreach (var location in userLocations)
-        {
-            Add(LookupCategories.Country, location.Country, null, 1000);
-            if (!string.IsNullOrWhiteSpace(location.City))
-                Add(LookupCategories.City, location.City, location.Country, 1000);
-        }
+        if (!existingCategories.Contains(LookupCategories.Division))
+            for (var index = 0; index < divisions.Length; index++)
+                Add(LookupCategories.Division, divisions[index], null, (index + 1) * 10);
+        if (!existingCategories.Contains(LookupCategories.JobFunction))
+            for (var index = 0; index < jobFunctions.Length; index++)
+                Add(LookupCategories.JobFunction, jobFunctions[index], null, (index + 1) * 10);
+        if (!existingCategories.Contains(LookupCategories.CareerLevel))
+            for (var index = 0; index < careerLevels.Length; index++)
+                Add(LookupCategories.CareerLevel, careerLevels[index], null, (index + 1) * 10);
 
         await database.SaveChangesAsync(cancellationToken);
     }
