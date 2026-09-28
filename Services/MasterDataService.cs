@@ -90,10 +90,25 @@ public sealed class MasterDataService(PortalDbContext database)
         CancellationToken cancellationToken = default)
     {
         await ValidateCountryCityAsync(country, city, cancellationToken);
+        await ValidateDivisionAsync(division, cancellationToken);
+        await ValidateJobFunctionAsync(jobFunction, cancellationToken);
+        await ValidateCareerLevelAsync(careerLevel, cancellationToken);
+    }
+
+    public async Task ValidateDivisionAsync(string division, CancellationToken cancellationToken = default)
+    {
         if (!await IsActiveAsync(LookupCategories.Division, division, null, cancellationToken))
             throw new ApiException(400, "Select a valid division");
+    }
+
+    public async Task ValidateJobFunctionAsync(string jobFunction, CancellationToken cancellationToken = default)
+    {
         if (!await IsActiveAsync(LookupCategories.JobFunction, jobFunction, null, cancellationToken))
             throw new ApiException(400, "Select a valid job function");
+    }
+
+    public async Task ValidateCareerLevelAsync(string careerLevel, CancellationToken cancellationToken = default)
+    {
         if (!await IsActiveAsync(LookupCategories.CareerLevel, careerLevel, null, cancellationToken))
             throw new ApiException(400, "Select a valid career level");
     }

@@ -28,7 +28,7 @@ public sealed class AdminController(
         var today = PortalClock.UtcNow().Date;
         var tomorrow = today.AddDays(1);
         var openJobs = await database.Jobs.CountAsync(
-            value => value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
+            value => !value.IsDeletion && value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
                 (value.ExpiresAt == null || value.ExpiresAt >= today), cancellationToken);
         var applications = await database.Applications.CountAsync(cancellationToken);
         return new AdminSummaryResponse(users, candidates, admins, openJobs, applications);
@@ -132,13 +132,19 @@ public sealed class AdminController(
             throw new ApiException(400, "employment_type is invalid");
         var job = await database.Jobs.FindAsync([jobId], cancellationToken)
             ?? throw new ApiException(404, "Job not found");
-        await masterData.ValidateJobAsync(
-            payload.Country ?? job.Country,
-            payload.City ?? job.City,
-            payload.Division ?? job.Division,
-            payload.JobFunction ?? job.JobFunction,
-            payload.CareerLevel ?? job.CareerLevel,
-            cancellationToken);
+        if (job.IsDeletion)
+            throw new ApiException(409, "Restore this job before editing it");
+        if (payload.Country is not null || payload.City is not null)
+            await masterData.ValidateCountryCityAsync(
+                payload.Country ?? job.Country,
+                payload.City ?? job.City,
+                cancellationToken);
+        if (payload.Division is not null)
+            await masterData.ValidateDivisionAsync(payload.Division, cancellationToken);
+        if (payload.JobFunction is not null)
+            await masterData.ValidateJobFunctionAsync(payload.JobFunction, cancellationToken);
+        if (payload.CareerLevel is not null)
+            await masterData.ValidateCareerLevelAsync(payload.CareerLevel, cancellationToken);
         var postedAt = payload.PostedAt?.Date ?? job.PostedAt.Date;
         var expiresAt = payload.ExpiresAt?.Date ?? job.ExpiresAt?.Date;
         if (payload.PostedAt is not null && payload.PostedAt.Value.Date != job.PostedAt.Date)
@@ -181,17 +187,36 @@ public sealed class AdminController(
     {
         var job = await database.Jobs.FindAsync([jobId], cancellationToken)
             ?? throw new ApiException(404, "Job not found");
-        if (await database.Applications.AnyAsync(value => value.JobId == job.Id, cancellationToken))
-            throw new ApiException(409, "This job has candidate applications and cannot be deleted. Close it instead.");
+        if (job.IsDeletion)
+            return new MessageResponse("Job posting is already marked for deletion");
 
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        job.IsDeletion = true;
         sharePointOutbox.EnqueueJobDelete(job.Id);
-        auditLogs.Add(CurrentUserId, "Deleted", "Job posting", job.Id.ToString(),
-            $"Deleted job “{job.Title}”.");
-        database.Jobs.Remove(job);
+        auditLogs.Add(CurrentUserId, "Marked for deletion", "Job posting", job.Id.ToString(),
+            $"Marked job '{job.Title}' for deletion.");
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return new MessageResponse("Job posting deleted successfully");
+        return new MessageResponse("Job posting marked for deletion");
+    }
+
+    [Authorize(Roles = PortalRoles.Administrator)]
+    [HttpPost("jobs/{jobId:int}/restore")]
+    public async Task<ActionResult<JobResponse>> RestoreJob(int jobId, CancellationToken cancellationToken)
+    {
+        var job = await database.Jobs.FindAsync([jobId], cancellationToken)
+            ?? throw new ApiException(404, "Job not found");
+        if (!job.IsDeletion)
+            return job.ToResponse();
+
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        job.IsDeletion = false;
+        sharePointOutbox.EnqueueJob(job.Id);
+        auditLogs.Add(CurrentUserId, "Restored", "Job posting", job.Id.ToString(),
+            $"Restored job '{job.Title}'.");
+        await database.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return job.ToResponse();
     }
 
     [HttpGet("candidates")]
