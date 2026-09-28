@@ -55,9 +55,11 @@ public sealed class SharePointController(
         await client.ProvisionAsync(cancellationToken);
         var candidates = await database.Users.Where(value => value.Role == PortalRoles.Candidate)
             .OrderBy(value => value.Id).ToListAsync(cancellationToken);
-        var jobs = await database.Jobs.OrderBy(value => value.Id).ToListAsync(cancellationToken);
+        var jobs = await database.Jobs.Where(value => !value.IsDeletion)
+            .OrderBy(value => value.Id).ToListAsync(cancellationToken);
         var applications = await database.Applications
             .Include(value => value.User).Include(value => value.Job)
+            .Where(value => !value.Job.IsDeletion)
             .OrderBy(value => value.Id).ToListAsync(cancellationToken);
         foreach (var candidate in candidates)
             await synchronization.SyncCandidateAsync(candidate, cancellationToken);

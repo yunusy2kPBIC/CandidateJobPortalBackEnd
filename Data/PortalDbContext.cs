@@ -61,10 +61,12 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
         job.Property(x => x.IsOpen).HasColumnName("is_open");
         job.Property(x => x.IsPublished).HasColumnName("is_published");
         job.Property(x => x.IsFeatured).HasColumnName("is_featured");
+        job.Property(x => x.IsDeletion).HasColumnName("is_deletion");
         job.Property(x => x.PostedAt).HasColumnName("posted_at").HasColumnType(timestampType);
         job.Property(x => x.ExpiresAt).HasColumnName("expires_at").HasColumnType(timestampType);
         job.HasIndex(x => x.Title); job.HasIndex(x => x.Division); job.HasIndex(x => x.Country);
         job.HasIndex(x => x.City); job.HasIndex(x => x.JobFunction); job.HasIndex(x => x.CareerLevel);
+        job.HasIndex(x => x.IsDeletion);
 
         var application = modelBuilder.Entity<Application>();
         application.ToTable("applications").HasKey(x => x.Id);
