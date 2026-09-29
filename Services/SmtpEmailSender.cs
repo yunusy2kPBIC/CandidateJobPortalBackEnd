@@ -42,19 +42,7 @@ public sealed class SmtpEmailSender(
             return;
         }
 
-        if (string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase))
-        {
-            logger.LogInformation(
-                "DEV EMAIL from {Sender} to {Recipient}. Subject: {Subject}. Body: {Body}",
-                options.EmailSenderAddress,
-                recipientAddress,
-                subject,
-                body);
-            return;
-        }
-
-        if (!string.Equals(options.EmailDeliveryMode, "smtp", StringComparison.OrdinalIgnoreCase) ||
-            !options.SmtpConfigured)
+        if (!options.SmtpConfigured)
         {
             throw new ApiException(503, "SMTP email delivery is not configured");
         }

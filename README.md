@@ -16,9 +16,9 @@ dotnet run
 
 The API reads `backend-dotnet/.env`, then process environment variables. Configure SQL Server with `SQLSERVER_CONNECTION_STRING`; `Integrated Security=True` uses the identity running the API.
 
-New account email verification defaults to development delivery. The API generates a six-digit code, logs a simulated message from `dev-no-reply@candidateportal.local`, and returns the code to the local verification screen. After verification commits, it logs a second account-created confirmation with the appropriate Candidate or Student next step. Configure the timing with `EMAIL_VERIFICATION_MINUTES` and `EMAIL_VERIFICATION_RESEND_SECONDS`; no mailbox or external email provider is needed in this mode.
+`EMAIL_ENABLED` is the single email-delivery switch. With `EMAIL_ENABLED=Y`, account-verification, password-recovery, and confirmation messages are sent through the configured Office 365 SMTP settings, and codes are never returned to the browser. With `EMAIL_ENABLED=N`, outgoing email is skipped and the generated code is returned for display on the local verification or reset page. Configure verification timing with `EMAIL_VERIFICATION_MINUTES` and `EMAIL_VERIFICATION_RESEND_SECONDS`.
 
-Password recovery uses the same development sender. A six-digit reset code expires after `PASSWORD_RESET_MINUTES`, can be regenerated after `PASSWORD_RESET_RESEND_SECONDS`, and is limited by `PASSWORD_RESET_MAX_ATTEMPTS`. A successful reset consumes the code, revokes the user's active sessions, and logs a password-changed confirmation.
+Password-reset codes expire after `PASSWORD_RESET_MINUTES`, can be regenerated after `PASSWORD_RESET_RESEND_SECONDS`, and are limited by `PASSWORD_RESET_MAX_ATTEMPTS`. A successful reset consumes the code, revokes the user's active sessions, and sends a password-changed confirmation when email is enabled.
 
 The public privacy notice is versioned with `PRIVACY_POLICY_VERSION`, `PRIVACY_EFFECTIVE_DATE`, and `PRIVACY_CONTACT_EMAIL`. Registration must submit the current version and acceptance flag. The API stores the accepted version, UTC timestamp, IP address, and user agent in `user_consents`; `GET /api/privacy/consent` returns the authenticated user's latest evidence.
 

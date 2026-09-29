@@ -93,8 +93,5 @@ public sealed class PasswordRecoveryService(
         return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"password-reset:{userId}:{code}")));
     }
 
-    private bool ShouldExposeCode =>
-        !options.EmailEnabled ||
-        (string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase) &&
-         options.ExposeDevelopmentVerificationCode);
+    private bool ShouldExposeCode => !options.EmailEnabled;
 }
