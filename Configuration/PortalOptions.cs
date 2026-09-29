@@ -13,8 +13,7 @@ public sealed class PortalOptions
     public string BootstrapAdminPassword { get; init; } = "";
     public string BootstrapHrAdminEmail { get; init; } = "";
     public string BootstrapHrAdminPassword { get; init; } = "";
-    public bool EmailEnabled { get; init; } = true;
-    public string EmailDeliveryMode { get; init; } = "development";
+    public bool EmailEnabled { get; init; }
     public string EmailSenderAddress { get; init; } = "dev-no-reply@candidateportal.local";
     public string EmailSenderName { get; init; } = "PBICareerPosting";
     public string SmtpHost { get; init; } = "";
@@ -34,7 +33,6 @@ public sealed class PortalOptions
     public string PrivacyPolicyVersion { get; init; } = "1.0";
     public string PrivacyEffectiveDate { get; init; } = "2026-09-08";
     public string PrivacyContactEmail { get; init; } = "privacy@candidateportal.local";
-    public bool ExposeDevelopmentVerificationCode { get; init; } = true;
     public string StorageProvider { get; init; } = "local";
     public string LocalStoragePath { get; init; } = "../storage";
     public string SharePointTenantId { get; init; } = "";
@@ -108,8 +106,7 @@ public sealed class PortalOptions
             BootstrapAdminPassword = configuration["BOOTSTRAP_ADMIN_PASSWORD"] ?? "",
             BootstrapHrAdminEmail = (configuration["BOOTSTRAP_HR_ADMIN_EMAIL"] ?? "").Trim().ToLowerInvariant(),
             BootstrapHrAdminPassword = configuration["BOOTSTRAP_HR_ADMIN_PASSWORD"] ?? "",
-            EmailEnabled = YesNoFlag(configuration, "EMAIL_ENABLED", true),
-            EmailDeliveryMode = (configuration["EMAIL_DELIVERY_MODE"] ?? "development").Trim().ToLowerInvariant(),
+            EmailEnabled = YesNoFlag(configuration, "EMAIL_ENABLED"),
             EmailSenderAddress = (configuration["EMAIL_SENDER_ADDRESS"] ?? "dev-no-reply@candidateportal.local").Trim(),
             EmailSenderName = (configuration["EMAIL_SENDER_NAME"] ?? "PBICareerPosting").Trim(),
             SmtpHost = (configuration["SMTP_HOST"] ?? "").Trim(),
@@ -129,7 +126,6 @@ public sealed class PortalOptions
             PrivacyPolicyVersion = (configuration["PRIVACY_POLICY_VERSION"] ?? "1.0").Trim(),
             PrivacyEffectiveDate = (configuration["PRIVACY_EFFECTIVE_DATE"] ?? "2026-09-08").Trim(),
             PrivacyContactEmail = (configuration["PRIVACY_CONTACT_EMAIL"] ?? "privacy@candidateportal.local").Trim(),
-            ExposeDevelopmentVerificationCode = Flag(configuration, "EMAIL_EXPOSE_DEVELOPMENT_CODE", true),
             StorageProvider = configuration["STORAGE_PROVIDER"] ?? "local",
             LocalStoragePath = configuration["LOCAL_STORAGE_PATH"] ?? "../storage",
             SharePointTenantId = configuration["SHAREPOINT_TENANT_ID"] ?? "",
