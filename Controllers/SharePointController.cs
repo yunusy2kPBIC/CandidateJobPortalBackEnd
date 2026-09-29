@@ -222,10 +222,11 @@ public sealed class SharePointController(
         CancellationToken cancellationToken)
     {
         var items = await client.ListItemsAsync(options.SharePointRecruitmentRequestsList, cancellationToken);
-        return items.Select(RecruitmentRequestResponse.FromItem).ToArray();
+        return items.Select(RecruitmentRequestResponse.FromItem).Where(value => !value.IsDeleted).ToArray();
     }
 
     [HttpPost("recruitment-requests")]
+    [Authorize(Roles = PortalRoles.Administrator)]
     public async Task<ActionResult<RecruitmentRequestResponse>> CreateRecruitmentRequest(
         RecruitmentRequestCreate payload, CancellationToken cancellationToken)
     {
@@ -266,18 +267,25 @@ public sealed class SharePointController(
     [HttpDelete("recruitment-requests/{itemId:int}")]
     public Task<ActionResult<MessageResponse>> DeleteRecruitmentRequest(
         int itemId, CancellationToken cancellationToken) =>
-        DeleteItem(options.SharePointRecruitmentRequestsList, itemId, "Recruitment request",
-            "SharePoint item deleted successfully", cancellationToken);
+        SoftDeleteItem(options.SharePointRecruitmentRequestsList, itemId, "Recruitment request",
+            "Recruitment request soft deleted successfully", cancellationToken);
+
+    [HttpPost("recruitment-requests/{itemId:int}/restore")]
+    public Task<ActionResult<MessageResponse>> RestoreRecruitmentRequest(
+        int itemId, CancellationToken cancellationToken) =>
+        RestoreItem(options.SharePointRecruitmentRequestsList, itemId, "Recruitment request",
+            "Recruitment request restored successfully", cancellationToken);
 
     [HttpGet("cooperative-training-requests")]
     public async Task<IReadOnlyList<CooperativeTrainingResponse>> CooperativeTrainingRequests(
         CancellationToken cancellationToken)
     {
         var items = await client.ListItemsAsync(options.SharePointCooperativeTrainingList, cancellationToken);
-        return items.Select(CooperativeTrainingResponse.FromItem).ToArray();
+        return items.Select(CooperativeTrainingResponse.FromItem).Where(value => !value.IsDeleted).ToArray();
     }
 
     [HttpPost("cooperative-training-requests")]
+    [Authorize(Roles = PortalRoles.Administrator)]
     [RequestSizeLimit(21 * 1024 * 1024)]
     public async Task<ActionResult<CooperativeTrainingResponse>> CreateCooperativeTrainingRequest(
         [FromForm] string payload,
@@ -359,8 +367,15 @@ public sealed class SharePointController(
             options.SharePointCooperativeTrainingList, itemId, cancellationToken));
         var merged = payload.ApplyTo(existing);
         ValidateObject(merged);
+        var (trainingStatus, completionDate) = payload.StatusFor(existing);
+        foreach (var validationResult in SharePointRequestValidation.ValidateTrainingStatus(
+                     trainingStatus, completionDate, merged.TrainingStartingDate))
+            throw new ApiException(400, validationResult.ErrorMessage ?? "Training status is invalid");
+        var fields = merged.ToFields();
+        fields["TrainingStatus"] = trainingStatus;
+        fields["CompletionDate"] = completionDate?.ToString("yyyy-MM-dd");
         var updated = CooperativeTrainingResponse.FromItem(await client.UpdateItemAsync(
-            options.SharePointCooperativeTrainingList, itemId, merged.ToFields(), cancellationToken));
+            options.SharePointCooperativeTrainingList, itemId, fields, cancellationToken));
         await auditLogs.RecordAsync(CurrentUserId, "Updated", "Cooperative training request", itemId.ToString(),
             $"Updated cooperative training request for {updated.FirstName} {updated.LastName}.", cancellationToken);
         return updated;
@@ -404,12 +419,15 @@ public sealed class SharePointController(
     public async Task<ActionResult<MessageResponse>> DeleteCooperativeTrainingRequest(
         int itemId, CancellationToken cancellationToken)
     {
-        await client.DeleteCooperativeTrainingDocumentsAsync(itemId, cancellationToken);
-        await client.DeleteItemAsync(options.SharePointCooperativeTrainingList, itemId, cancellationToken);
-        await auditLogs.RecordAsync(CurrentUserId, "Deleted", "Cooperative training request", itemId.ToString(),
-            $"Deleted cooperative training request item {itemId} and its documents.", cancellationToken);
-        return new MessageResponse("Cooperative training request deleted successfully");
+        return await SoftDeleteItem(options.SharePointCooperativeTrainingList, itemId,
+            "Cooperative training request", "Cooperative training request soft deleted successfully", cancellationToken);
     }
+
+    [HttpPost("cooperative-training-requests/{itemId:int}/restore")]
+    public Task<ActionResult<MessageResponse>> RestoreCooperativeTrainingRequest(
+        int itemId, CancellationToken cancellationToken) =>
+        RestoreItem(options.SharePointCooperativeTrainingList, itemId, "Cooperative training request",
+            "Cooperative training request restored successfully", cancellationToken);
 
     [Authorize(Roles = PortalRoles.Administrator)]
     [HttpGet("resumes")]
@@ -451,6 +469,26 @@ public sealed class SharePointController(
         await client.DeleteItemAsync(listName, itemId, cancellationToken);
         await auditLogs.RecordAsync(CurrentUserId, "Deleted", entityType, itemId.ToString(),
             $"Deleted {entityType.ToLowerInvariant()} item {itemId}.", cancellationToken);
+        return new MessageResponse(message);
+    }
+
+    private async Task<ActionResult<MessageResponse>> SoftDeleteItem(
+        string listName, int itemId, string entityType, string message, CancellationToken cancellationToken)
+    {
+        await client.UpdateItemAsync(listName, itemId,
+            new Dictionary<string, object?> { ["IsDeleted"] = true }, cancellationToken);
+        await auditLogs.RecordAsync(CurrentUserId, "Soft deleted", entityType, itemId.ToString(),
+            $"Soft deleted {entityType.ToLowerInvariant()} item {itemId}.", cancellationToken);
+        return new MessageResponse(message);
+    }
+
+    private async Task<ActionResult<MessageResponse>> RestoreItem(
+        string listName, int itemId, string entityType, string message, CancellationToken cancellationToken)
+    {
+        await client.UpdateItemAsync(listName, itemId,
+            new Dictionary<string, object?> { ["IsDeleted"] = false }, cancellationToken);
+        await auditLogs.RecordAsync(CurrentUserId, "Restored", entityType, itemId.ToString(),
+            $"Restored {entityType.ToLowerInvariant()} item {itemId}.", cancellationToken);
         return new MessageResponse(message);
     }
 

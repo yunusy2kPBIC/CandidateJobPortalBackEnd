@@ -231,7 +231,7 @@ internal static class SharePointProvisioner
     private static IReadOnlyList<Dictionary<string, object?>> ApplicationColumns(string candidates, string jobs) =>
     [
         Text("PortalApplicationId", true), Lookup("Candidate", candidates), Lookup("Job", jobs), Text("CandidateJobKey", true),
-        Choice("Status", ["Under Review", "Interview", "Shortlisted", "Rejected", "Hired", "Withdrawn"], true), Date("AppliedAt", true),
+        Choice("Status", ["Under Review", "Interview", "Shortlisted", "Rejected", "Hired", "Withdrawn"], true), Date("AppliedAt", true), Date("HiredAt"),
     ];
     private static IReadOnlyList<Dictionary<string, object?>> ResumeColumns(string candidates) =>
         [Lookup("Candidate", candidates), Text("CandidateEmail", true), Date("UploadedAt", true), Boolean("IsCurrent")];
@@ -246,7 +246,7 @@ internal static class SharePointProvisioner
         Text("CurrentEmployer", displayName: "Current Employer"), Date("DateOfBirth", true, true, "Date of Birth"),
         Text("City", true), Boolean("AcceptWorkInAnotherCity", "Accept Work in Another City"),
         Choice("Qualification", ["High School", "Diploma", "Bachelor's Degree", "Master's Degree", "Doctorate", "Other"], true),
-        Number("CurrentSalary", true, 0, 100000000, "Current Salary (SAR)"), Text("Comments", multiline: true),
+        Number("CurrentSalary", true, 0, 100000000, "Current Salary (SAR)"), Text("Comments", multiline: true), Boolean("Hired"), Boolean("IsDeleted", "Is Deleted"),
     ];
     private static IReadOnlyList<Dictionary<string, object?>> TrainingColumns() =>
     [
@@ -263,7 +263,9 @@ internal static class SharePointProvisioner
         Text("Major", true), Choice("GpaScale", ["4", "5"], true, displayName: "GPA Scale"),
         Number("CumulativeGpa", true, 0, 5, "Cumulative GPA"), Choice("EnglishLevel", ["Beginner", "Intermediate", "Advanced", "Fluent"], true, displayName: "English Level"),
         Text("DesiredCityForTraining", true, displayName: "Desired City for Training"), Text("CurrentCityOfResidency", true, displayName: "Current City of Residency"),
-        Boolean("Disability"), Boolean("DeclarationAccepted", "Declaration Accepted"), Text("TranscriptUrl", displayName: "Transcript URL"),
+        Boolean("Disability"), Boolean("DeclarationAccepted", "Declaration Accepted"),
+        Choice("TrainingStatus", ["Under Training", "Completed"], displayName: "Training Status"), Date("CompletionDate", dateOnly: true, displayName: "Completion Date"),
+        Boolean("IsDeleted", "Is Deleted"), Text("TranscriptUrl", displayName: "Transcript URL"),
         Text("TranscriptFileName", displayName: "Transcript File Name"), Text("UniversityRequestUrl", displayName: "University Request URL"),
         Text("UniversityRequestFileName", displayName: "University Request File Name"),
     ];

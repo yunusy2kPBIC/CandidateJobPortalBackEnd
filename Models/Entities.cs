@@ -76,6 +76,7 @@ public sealed class Application
     public int JobId { get; set; }
     public string Status { get; set; } = "Under Review";
     public DateTime AppliedAt { get; set; } = PortalClock.UtcNow();
+    public DateTime? HiredAt { get; set; }
     public User User { get; set; } = null!;
     public Job Job { get; set; } = null!;
 }

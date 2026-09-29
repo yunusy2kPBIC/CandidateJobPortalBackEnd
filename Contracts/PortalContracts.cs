@@ -180,7 +180,14 @@ public sealed record DashboardResponse(
     int ProfileComplete,
     IReadOnlyList<DashboardActivity> RecentActivity);
 
-public sealed record AdminSummaryResponse(int Users, int Candidates, int Admins, int OpenJobs, int Applications);
+public sealed record AdminSummaryResponse(
+    int Users,
+    int Candidates,
+    int Admins,
+    int OpenJobs,
+    int ClosedJobs,
+    int Applications,
+    int HiredCandidates);
 
 public sealed record AdminJobOptionsResponse(
     IReadOnlyList<string> Countries,
@@ -266,6 +273,7 @@ public sealed record AdminApplicationResponse(
     string ApplicationCode,
     string Status,
     DateTime AppliedAt,
+    DateTime? HiredAt,
     AdminCandidateResponse Candidate,
     JobResponse Job);
 

@@ -21,6 +21,7 @@ public sealed class RecruitmentRequestCreate : IValidatableObject
     [Required] public string Qualification { get; init; } = "";
     [Range(0, 100_000_000)] public double CurrentSalary { get; init; }
     [Required, MinLength(1), MaxLength(5000)] public string Comments { get; init; } = "";
+    public bool Hired { get; init; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
@@ -50,6 +51,8 @@ public sealed class RecruitmentRequestCreate : IValidatableObject
         ["Qualification"] = Qualification,
         ["CurrentSalary"] = CurrentSalary,
         ["Comments"] = Comments.Trim(),
+        ["Hired"] = Hired,
+        ["IsDeleted"] = false,
     };
 }
 
@@ -71,6 +74,7 @@ public sealed class RecruitmentRequestUpdate : IValidatableObject
     public string? Qualification { get; init; }
     [Range(0, 100_000_000)] public double? CurrentSalary { get; init; }
     [MinLength(1), MaxLength(5000)] public string? Comments { get; init; }
+    public bool? Hired { get; init; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
@@ -89,7 +93,7 @@ public sealed class RecruitmentRequestUpdate : IValidatableObject
         ("IqamaProfession", IqamaProfession), ("CurrentEmployer", CurrentEmployer),
         ("DateOfBirth", DateOfBirth?.ToString("yyyy-MM-dd")), ("City", City),
         ("AcceptWorkInAnotherCity", AcceptWorkInAnotherCity), ("Qualification", Qualification),
-        ("CurrentSalary", CurrentSalary), ("Comments", Comments));
+        ("CurrentSalary", CurrentSalary), ("Comments", Comments), ("Hired", Hired));
 }
 
 public sealed record RecruitmentRequestResponse(
@@ -112,7 +116,9 @@ public sealed record RecruitmentRequestResponse(
     bool AcceptWorkInAnotherCity,
     string Qualification,
     double CurrentSalary,
-    string Comments)
+    string Comments,
+    bool Hired,
+    bool IsDeleted)
 {
     public static RecruitmentRequestResponse FromItem(SharePointItemResponse item) => new(
         item.Id, item.WebUrl, item.CreatedAt, item.UpdatedAt,
@@ -131,7 +137,9 @@ public sealed record RecruitmentRequestResponse(
         SharePointResponseFields.Boolean(item, false, "Accept Work in Another City", "AcceptWorkInAnotherCity"),
         SharePointResponseFields.Text(item, "Other", "Qualification"),
         SharePointResponseFields.Number(item, 0, "Current Salary (SAR)", "CurrentSalary"),
-        SharePointResponseFields.Text(item, "", "Comments"));
+        SharePointResponseFields.Text(item, "", "Comments"),
+        SharePointResponseFields.Boolean(item, false, "Hired"),
+        SharePointResponseFields.Boolean(item, false, "Is Deleted", "IsDeleted"));
 }
 
 public sealed class CooperativeTrainingCreateRequest : IValidatableObject
@@ -187,6 +195,9 @@ public sealed class CooperativeTrainingCreateRequest : IValidatableObject
         ["CurrentCityOfResidency"] = CurrentCityOfResidency.Trim(),
         ["Disability"] = Disability,
         ["DeclarationAccepted"] = DeclarationAccepted,
+        ["TrainingStatus"] = "Under Training",
+        ["CompletionDate"] = null,
+        ["IsDeleted"] = false,
     };
 }
 
@@ -214,6 +225,8 @@ public sealed class CooperativeTrainingUpdateRequest
     [MinLength(1), MaxLength(100)] public string? CurrentCityOfResidency { get; init; }
     public bool? Disability { get; init; }
     public bool? DeclarationAccepted { get; init; }
+    public string? TrainingStatus { get; init; }
+    public DateOnly? CompletionDate { get; init; }
 
     public CooperativeTrainingCreateRequest ApplyTo(CooperativeTrainingResponse value) => new()
     {
@@ -240,6 +253,13 @@ public sealed class CooperativeTrainingUpdateRequest
         Disability = Disability ?? value.Disability,
         DeclarationAccepted = DeclarationAccepted ?? value.DeclarationAccepted,
     };
+
+    public (string Status, DateOnly? CompletionDate) StatusFor(CooperativeTrainingResponse value)
+    {
+        var status = (TrainingStatus ?? value.TrainingStatus).Trim();
+        var completionDate = status == "Under Training" ? null : CompletionDate ?? value.CompletionDate;
+        return (status, completionDate);
+    }
 }
 
 public sealed record CooperativeTrainingResponse(
@@ -269,6 +289,9 @@ public sealed record CooperativeTrainingResponse(
     string CurrentCityOfResidency,
     bool Disability,
     bool DeclarationAccepted,
+    string TrainingStatus,
+    DateOnly? CompletionDate,
+    bool IsDeleted,
     string? TranscriptUrl,
     string? TranscriptName,
     string? UniversityRequestUrl,
@@ -298,6 +321,9 @@ public sealed record CooperativeTrainingResponse(
         SharePointResponseFields.Text(item, "", "Current City of Residency", "CurrentCityOfResidency"),
         SharePointResponseFields.Boolean(item, false, "Disability"),
         SharePointResponseFields.Boolean(item, false, "Declaration Accepted", "DeclarationAccepted"),
+        SharePointResponseFields.Text(item, "Under Training", "Training Status", "TrainingStatus"),
+        SharePointResponseFields.NullableSaudiDate(item, "Completion Date", "CompletionDate"),
+        SharePointResponseFields.Boolean(item, false, "Is Deleted", "IsDeleted"),
         SharePointResponseFields.NullableText(item, "Transcript URL", "TranscriptUrl"),
         SharePointResponseFields.NullableText(item, "Transcript File Name", "TranscriptFileName"),
         SharePointResponseFields.NullableText(item, "University Request URL", "UniversityRequestUrl"),
@@ -314,6 +340,7 @@ internal static class SharePointRequestValidation
         ["High School", "Diploma", "Bachelor's Degree", "Master's Degree", "Doctorate", "Other"];
     private static readonly HashSet<string> Semesters = ["First Semester", "Second Semester", "Summer Semester"];
     private static readonly HashSet<string> EnglishLevels = ["Beginner", "Intermediate", "Advanced", "Fluent"];
+    private static readonly HashSet<string> TrainingStatuses = ["Under Training", "Completed"];
 
     public static IEnumerable<ValidationResult> ValidateRecruitment(
         string? gender, string? license, string? mobile, string? iqama, string? iqamaProfession, string? qualification,
@@ -352,6 +379,17 @@ internal static class SharePointRequestValidation
         if (value.GpaScale is not (4 or 5)) yield return Error("GPA scale must be 4 or 5", "GpaScale");
         if (value.CumulativeGpa > value.GpaScale) yield return Error("Cumulative GPA cannot exceed the selected GPA scale", "CumulativeGpa");
         if (!value.DeclarationAccepted) yield return Error("The accuracy declaration must be accepted", "DeclarationAccepted");
+    }
+
+    public static IEnumerable<ValidationResult> ValidateTrainingStatus(
+        string status, DateOnly? completionDate, DateOnly trainingStartingDate)
+    {
+        if (!TrainingStatuses.Contains(status))
+            yield return Error("training_status is invalid", "TrainingStatus");
+        else if (status == "Completed" && completionDate is null)
+            yield return Error("Completion date is required when training is completed", "CompletionDate");
+        else if (completionDate is not null && completionDate < trainingStartingDate)
+            yield return Error("Completion date cannot be before the training starting date", "CompletionDate");
     }
 
     private static bool ValidPhone(string value)
@@ -410,6 +448,17 @@ internal static class SharePointResponseFields
         if (DateTimeOffset.TryParse(text, out var timestamp))
             return DateOnly.FromDateTime(timestamp.ToOffset(TimeSpan.FromHours(3)).DateTime);
         throw new InvalidOperationException($"SharePoint date value '{text}' is invalid");
+    }
+
+    public static DateOnly? NullableSaudiDate(SharePointItemResponse item, params string[] names)
+    {
+        var value = Value(item, names);
+        if (value is null || string.IsNullOrWhiteSpace(Convert.ToString(value))) return null;
+        var text = Convert.ToString(value)!;
+        if (!text.Contains('T') && DateOnly.TryParse(text, out var date)) return date;
+        return DateTimeOffset.TryParse(text, out var timestamp)
+            ? DateOnly.FromDateTime(timestamp.ToOffset(TimeSpan.FromHours(3)).DateTime)
+            : null;
     }
 
     private static object? Value(SharePointItemResponse item, IEnumerable<string> names)

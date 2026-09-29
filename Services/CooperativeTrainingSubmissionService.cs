@@ -41,7 +41,7 @@ public sealed class CooperativeTrainingSubmissionService(
         var items = await client.ListItemsAsync(options.SharePointCooperativeTrainingList, cancellationToken);
         return items
             .Select(CooperativeTrainingResponse.FromItem)
-            .Where(value => string.Equals(value.Email, email, StringComparison.OrdinalIgnoreCase))
+            .Where(value => !value.IsDeleted && string.Equals(value.Email, email, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(value => value.CreatedAt)
             .ThenByDescending(value => int.TryParse(value.Id, out var id) ? id : 0)
             .FirstOrDefault();
@@ -134,6 +134,8 @@ public sealed class CooperativeTrainingSubmissionService(
         fields["FirstName"] = ownerFirstName.Trim();
         fields["LastName"] = ownerLastName.Trim();
         fields["Email"] = applicantEmail;
+        fields["TrainingStatus"] = existing.TrainingStatus;
+        fields["CompletionDate"] = existing.CompletionDate?.ToString("yyyy-MM-dd");
 
         var uploadedDocumentIds = new List<int>();
         var requestUpdated = false;

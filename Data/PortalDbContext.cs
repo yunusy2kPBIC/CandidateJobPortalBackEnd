@@ -75,6 +75,7 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
         application.Property(x => x.JobId).HasColumnName("job_id");
         application.Property(x => x.Status).HasColumnName("status").HasMaxLength(50);
         application.Property(x => x.AppliedAt).HasColumnName("applied_at").HasColumnType(timestampType);
+        application.Property(x => x.HiredAt).HasColumnName("hired_at").HasColumnType(timestampType);
         application.HasIndex(x => new { x.UserId, x.JobId }).IsUnique().HasDatabaseName("uq_user_job");
         application.HasOne(x => x.User).WithMany(x => x.Applications).HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         application.HasOne(x => x.Job).WithMany(x => x.Applications).HasForeignKey(x => x.JobId).OnDelete(DeleteBehavior.Cascade);
