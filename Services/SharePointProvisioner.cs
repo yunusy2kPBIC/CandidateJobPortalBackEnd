@@ -21,6 +21,10 @@ internal static class SharePointProvisioner
             "SP202609300001_InitialBaseline",
             "Create or repair the current Candidate Portal SharePoint lists, libraries, columns, and choices.",
             ApplyInitialSchema),
+        new(
+            "SP202610030001_RecruitmentHiredAt",
+            "Add the recruitment request hiring timestamp used for accurate ordering and reporting.",
+            ApplyRecruitmentHiredAt),
     ];
 
     public static async Task<SharePointSetupResponse> ProvisionAsync(
@@ -131,6 +135,19 @@ internal static class SharePointProvisioner
             return parsed;
         }
         return item.CreatedAt;
+    }
+
+    private static async Task<IReadOnlyList<SharePointSetupResource>> ApplyRecruitmentHiredAt(
+        GraphSharePointClient client,
+        PortalOptions options,
+        string siteId,
+        CancellationToken cancellationToken)
+    {
+        var recruitmentRequests = await EnsureList(
+            client, siteId, options.SharePointRecruitmentRequestsList, "genericList", cancellationToken);
+        await EnsureColumns(client, siteId, recruitmentRequests.Id,
+            [Date("HiredAt", displayName: "Hired At")], cancellationToken);
+        return [recruitmentRequests];
     }
 
     private static async Task<SharePointSetupResource> EnsureList(

@@ -2,6 +2,7 @@ using CandidatePortal.Api.Configuration;
 using CandidatePortal.Api.Contracts;
 using CandidatePortal.Api.Data;
 using CandidatePortal.Api.Infrastructure;
+using CandidatePortal.Api.Models;
 using CandidatePortal.Api.Security;
 using CandidatePortal.Api.Services;
 using System.ComponentModel.DataAnnotations;
@@ -257,8 +258,13 @@ public sealed class SharePointController(
         if (!effectiveIqamaNumber.StartsWith('1') && string.IsNullOrWhiteSpace(effectiveIqamaProfession))
             throw new ApiException(400,
                 "Iqama profession is required when ID/Iqama number does not begin with 1");
+        var fields = payload.ToFields();
+        if (payload.Hired is true && !existing.Hired)
+            fields["HiredAt"] = SharePointSyncService.GraphDateTime(PortalClock.UtcNow());
+        else if (payload.Hired is false && existing.Hired)
+            fields["HiredAt"] = null;
         var updated = RecruitmentRequestResponse.FromItem(await client.UpdateItemAsync(
-            options.SharePointRecruitmentRequestsList, itemId, payload.ToFields(), cancellationToken));
+            options.SharePointRecruitmentRequestsList, itemId, fields, cancellationToken));
         await auditLogs.RecordAsync(CurrentUserId, "Updated", "Recruitment request", itemId.ToString(),
             $"Updated recruitment request for {updated.Name}.", cancellationToken);
         return updated;

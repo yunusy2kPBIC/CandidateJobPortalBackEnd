@@ -26,16 +26,16 @@ public sealed class AdminController(
         var candidates = await database.Users.CountAsync(value => value.Role == PortalRoles.Candidate, cancellationToken);
         var admins = await database.Users.CountAsync(value => value.Role == PortalRoles.Administrator, cancellationToken);
         var today = PortalClock.UtcNow().Date;
-        var tomorrow = today.AddDays(1);
-        var openJobs = await database.Jobs.CountAsync(
-            value => !value.IsDeletion && value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
-                (value.ExpiresAt == null || value.ExpiresAt >= today), cancellationToken);
-        var closedJobs = await database.Jobs.CountAsync(
-            value => !value.IsDeletion && !(value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
-                (value.ExpiresAt == null || value.ExpiresAt >= today)), cancellationToken);
-        var applications = await database.Applications.CountAsync(value =>
-            value.Status == "Hired" || !database.Applications.Any(other =>
-                other.UserId == value.UserId && other.Id != value.Id && other.Status == "Hired"), cancellationToken);
+        var totalJobs = await database.Jobs.CountAsync(value => !value.IsDeletion, cancellationToken);
+        var openJobQuery = database.Jobs.AsNoTracking().Open(today);
+        var openJobs = await openJobQuery.CountAsync(cancellationToken);
+        var closedJobs = totalJobs - openJobs;
+        var openJobIds = openJobQuery.Select(value => value.Id);
+        var applications = await database.Applications.AsNoTracking()
+            .Where(value => openJobIds.Contains(value.JobId))
+            .Select(value => new { value.UserId, value.JobId })
+            .Distinct()
+            .CountAsync(cancellationToken);
         var hiredCandidates = await database.Applications
             .Where(value => value.Status == "Hired")
             .Select(value => value.UserId)
@@ -138,23 +138,23 @@ public sealed class AdminController(
     public async Task<ActionResult<JobResponse>> UpdateJob(
         int jobId, AdminJobUpdateRequest payload, CancellationToken cancellationToken)
     {
-        if (payload.EmploymentType is not null && !PortalValues.EmploymentTypes.Contains(payload.EmploymentType))
-            throw new ApiException(400, "employment_type is invalid");
         var job = await database.Jobs.FindAsync([jobId], cancellationToken)
             ?? throw new ApiException(404, "Job not found");
         if (job.IsDeletion)
             throw new ApiException(409, "Restore this job before editing it");
-        if (payload.Country is not null || payload.City is not null)
+        if (Changed(job.EmploymentType, payload.EmploymentType))
+            ValidateEmploymentType(payload.EmploymentType!);
+        if (Changed(job.Country, payload.Country) || Changed(job.City, payload.City))
             await masterData.ValidateCountryCityAsync(
                 payload.Country ?? job.Country,
                 payload.City ?? job.City,
                 cancellationToken);
-        if (payload.Division is not null)
-            await masterData.ValidateDivisionAsync(payload.Division, cancellationToken);
-        if (payload.JobFunction is not null)
-            await masterData.ValidateJobFunctionAsync(payload.JobFunction, cancellationToken);
-        if (payload.CareerLevel is not null)
-            await masterData.ValidateCareerLevelAsync(payload.CareerLevel, cancellationToken);
+        if (Changed(job.Division, payload.Division))
+            await masterData.ValidateDivisionAsync(payload.Division!, cancellationToken);
+        if (Changed(job.JobFunction, payload.JobFunction))
+            await masterData.ValidateJobFunctionAsync(payload.JobFunction!, cancellationToken);
+        if (Changed(job.CareerLevel, payload.CareerLevel))
+            await masterData.ValidateCareerLevelAsync(payload.CareerLevel!, cancellationToken);
         var postedAt = payload.PostedAt?.Date ?? job.PostedAt.Date;
         var expiresAt = payload.ExpiresAt?.Date ?? job.ExpiresAt?.Date;
         if (payload.PostedAt is not null && payload.PostedAt.Value.Date != job.PostedAt.Date)
@@ -240,9 +240,7 @@ public sealed class AdminController(
             .Select(value => new
             {
                 User = value,
-                ApplicationCount = value.Applications.Count(application =>
-                    application.Status == "Hired" || !value.Applications.Any(other =>
-                        other.Id != application.Id && other.Status == "Hired")),
+                ApplicationCount = value.Applications.Select(application => application.JobId).Distinct().Count(),
             })
             .ToListAsync(cancellationToken);
         return rows.Select(value => CandidateResponse(value.User, value.ApplicationCount)).ToArray();
@@ -293,15 +291,13 @@ public sealed class AdminController(
         var candidateIds = applications.Select(value => value.UserId).Distinct().ToArray();
         var applicationStatuses = await database.Applications.AsNoTracking()
             .Where(value => candidateIds.Contains(value.UserId))
-            .Select(value => new { value.UserId, value.Status })
+            .Select(value => new { value.UserId, value.JobId })
             .ToListAsync(cancellationToken);
         var applicationCounts = applicationStatuses
             .GroupBy(value => value.UserId)
             .ToDictionary(
                 group => group.Key,
-                group => group.Any(value => value.Status == "Hired")
-                    ? group.Count(value => value.Status == "Hired")
-                    : group.Count());
+                group => group.Select(value => value.JobId).Distinct().Count());
         return applications.Select(value => ApplicationResponse(
             value, applicationCounts.GetValueOrDefault(value.UserId))).ToArray();
     }
@@ -370,12 +366,11 @@ public sealed class AdminController(
 
     private async Task<int> ActiveApplicationCountAsync(int userId, CancellationToken cancellationToken)
     {
-        var statuses = await database.Applications.AsNoTracking()
+        return await database.Applications.AsNoTracking()
             .Where(value => value.UserId == userId)
-            .Select(value => value.Status)
-            .ToListAsync(cancellationToken);
-        var hiredCount = statuses.Count(value => value == "Hired");
-        return hiredCount > 0 ? hiredCount : statuses.Count;
+            .Select(value => value.JobId)
+            .Distinct()
+            .CountAsync(cancellationToken);
     }
 
     private static void ValidateEmploymentType(string employmentType)
@@ -395,6 +390,9 @@ public sealed class AdminController(
         if (postedAt.Date < PortalClock.UtcNow().Date)
             throw new ApiException(400, "posted_at must be today or a future date");
     }
+
+    private static bool Changed(string current, string? requested) =>
+        requested is not null && !string.Equals(current, requested.Trim(), StringComparison.OrdinalIgnoreCase);
 
     private static List<string> JobChangedFields(Job job, AdminJobUpdateRequest payload)
     {

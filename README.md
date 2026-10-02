@@ -60,7 +60,7 @@ dotnet run -- --migrate-sharepoint
 
 The command creates the `Portal Schema Migrations` history list, applies or verifies all known additive schema migrations, and records the current version. It creates missing lists, libraries, columns, and choice values but does not delete SharePoint data. It also validates existing column types and resolves configured display names to the real SharePoint internal field names.
 
-Run the SharePoint migration command after the SQL migration and before deploying a backend version that writes new SharePoint fields. Running it again is safe and repairs additive schema drift. The current SharePoint schema version is `SP202609300001_InitialBaseline`.
+Run the SharePoint migration command after the SQL migration and before deploying a backend version that writes new SharePoint fields. Running it again is safe and repairs additive schema drift. The current SharePoint schema version is `SP202610030001_RecruitmentHiredAt`.
 
 When demo seeding is enabled, the HR Administrator account is
 `hr.admin@candidateportal.local` / `HrAdmin@1234`. For non-demo environments, set
