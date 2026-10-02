@@ -52,6 +52,7 @@ public sealed class RecruitmentRequestCreate : IValidatableObject
         ["CurrentSalary"] = CurrentSalary,
         ["Comments"] = Comments.Trim(),
         ["Hired"] = Hired,
+        ["HiredAt"] = Hired ? Services.SharePointSyncService.GraphDateTime(PortalClock.UtcNow()) : null,
         ["IsDeleted"] = false,
     };
 }
@@ -118,6 +119,7 @@ public sealed record RecruitmentRequestResponse(
     double CurrentSalary,
     string Comments,
     bool Hired,
+    DateTime? HiredAt,
     bool IsDeleted)
 {
     public static RecruitmentRequestResponse FromItem(SharePointItemResponse item) => new(
@@ -139,6 +141,7 @@ public sealed record RecruitmentRequestResponse(
         SharePointResponseFields.Number(item, 0, "Current Salary (SAR)", "CurrentSalary"),
         SharePointResponseFields.Text(item, "", "Comments"),
         SharePointResponseFields.Boolean(item, false, "Hired"),
+        SharePointResponseFields.NullableDateTime(item, "Hired At", "HiredAt"),
         SharePointResponseFields.Boolean(item, false, "Is Deleted", "IsDeleted"));
 }
 
@@ -458,6 +461,15 @@ internal static class SharePointResponseFields
         if (!text.Contains('T') && DateOnly.TryParse(text, out var date)) return date;
         return DateTimeOffset.TryParse(text, out var timestamp)
             ? DateOnly.FromDateTime(timestamp.ToOffset(TimeSpan.FromHours(3)).DateTime)
+            : null;
+    }
+
+    public static DateTime? NullableDateTime(SharePointItemResponse item, params string[] names)
+    {
+        var value = Value(item, names);
+        if (value is null || string.IsNullOrWhiteSpace(Convert.ToString(value))) return null;
+        return DateTimeOffset.TryParse(Convert.ToString(value), out var timestamp)
+            ? timestamp.UtcDateTime
             : null;
     }
 
