@@ -14,12 +14,6 @@ public sealed class DatabaseBootstrapper(
 {
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        if (options.AutoCreateSchema)
-        {
-            await database.Database.EnsureCreatedAsync(cancellationToken);
-        }
-        await EnsureSchemaEvolutionAsync(cancellationToken);
-
         if (options.SeedDemoData)
         {
             await SeedDemoDataAsync(cancellationToken);
@@ -49,8 +43,19 @@ public sealed class DatabaseBootstrapper(
             cancellationToken);
     }
 
-    private async Task EnsureSchemaEvolutionAsync(CancellationToken cancellationToken)
+    public async Task PrepareExistingSchemaForMigrationBaselineAsync(
+        CancellationToken cancellationToken = default)
     {
+        await database.Database.ExecuteSqlRawAsync(
+            """
+            IF OBJECT_ID(N'users', N'U') IS NULL OR
+               OBJECT_ID(N'jobs', N'U') IS NULL OR
+               OBJECT_ID(N'applications', N'U') IS NULL
+            BEGIN
+                THROW 50000, 'The existing Candidate Portal base tables were not found. Use --migrate for a new database.', 1;
+            END
+            """,
+            cancellationToken);
         await database.Database.ExecuteSqlRawAsync(
             "IF COL_LENGTH('jobs', 'expires_at') IS NULL ALTER TABLE jobs ADD expires_at datetime2 NULL;",
             cancellationToken);
@@ -61,7 +66,26 @@ public sealed class DatabaseBootstrapper(
             "IF COL_LENGTH('jobs', 'is_deletion') IS NULL ALTER TABLE jobs ADD is_deletion bit NOT NULL CONSTRAINT DF_jobs_is_deletion DEFAULT 0;",
             cancellationToken);
         await database.Database.ExecuteSqlRawAsync(
+            "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_jobs_is_deletion' AND [object_id] = OBJECT_ID(N'jobs')) CREATE INDEX IX_jobs_is_deletion ON jobs(is_deletion);",
+            cancellationToken);
+        await database.Database.ExecuteSqlRawAsync(
             "IF COL_LENGTH('applications', 'hired_at') IS NULL ALTER TABLE applications ADD hired_at datetime2 NULL;",
+            cancellationToken);
+        await database.Database.ExecuteSqlRawAsync(
+            """
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_applications_job_id' AND [object_id] = OBJECT_ID(N'applications')) CREATE INDEX IX_applications_job_id ON applications(job_id);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'uq_user_job' AND [object_id] = OBJECT_ID(N'applications')) CREATE UNIQUE INDEX uq_user_job ON applications(user_id, job_id);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_auth_sessions_user_id' AND [object_id] = OBJECT_ID(N'auth_sessions')) CREATE INDEX IX_auth_sessions_user_id ON auth_sessions(user_id);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_notifications_user_id' AND [object_id] = OBJECT_ID(N'notifications')) CREATE INDEX IX_notifications_user_id ON notifications(user_id);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_users_email' AND [object_id] = OBJECT_ID(N'users')) CREATE UNIQUE INDEX IX_users_email ON users(email);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_users_role' AND [object_id] = OBJECT_ID(N'users')) CREATE INDEX IX_users_role ON users(role);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_jobs_title' AND [object_id] = OBJECT_ID(N'jobs')) CREATE INDEX IX_jobs_title ON jobs(title);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_jobs_division' AND [object_id] = OBJECT_ID(N'jobs')) CREATE INDEX IX_jobs_division ON jobs(division);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_jobs_country' AND [object_id] = OBJECT_ID(N'jobs')) CREATE INDEX IX_jobs_country ON jobs(country);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_jobs_city' AND [object_id] = OBJECT_ID(N'jobs')) CREATE INDEX IX_jobs_city ON jobs(city);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_jobs_job_function' AND [object_id] = OBJECT_ID(N'jobs')) CREATE INDEX IX_jobs_job_function ON jobs(job_function);
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE [name] = N'IX_jobs_career_level' AND [object_id] = OBJECT_ID(N'jobs')) CREATE INDEX IX_jobs_career_level ON jobs(career_level);
+            """,
             cancellationToken);
         await database.Database.ExecuteSqlRawAsync(
             "IF COL_LENGTH('users', 'nationality') IS NULL ALTER TABLE users ADD nationality nvarchar(50) NOT NULL CONSTRAINT DF_users_nationality DEFAULT '';",

@@ -10,8 +10,24 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
-var seedOnly = args.Any(value => string.Equals(value, "--seed-only", StringComparison.OrdinalIgnoreCase));
-var hostArguments = args.Where(value => !string.Equals(value, "--seed-only", StringComparison.OrdinalIgnoreCase)).ToArray();
+var migrationArguments = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+{
+    "--migrate",
+    "--migrate-sharepoint",
+    "--baseline-existing-database",
+    "--seed-only",
+};
+var migrateOnly = args.Contains("--migrate", StringComparer.OrdinalIgnoreCase);
+var migrateSharePointOnly = args.Contains("--migrate-sharepoint", StringComparer.OrdinalIgnoreCase);
+var baselineOnly = args.Contains("--baseline-existing-database", StringComparer.OrdinalIgnoreCase);
+var seedOnly = args.Contains("--seed-only", StringComparer.OrdinalIgnoreCase);
+if (new[] { migrateOnly, migrateSharePointOnly, baselineOnly, seedOnly }.Count(value => value) > 1)
+{
+    throw new InvalidOperationException(
+        "Use only one maintenance command at a time: --migrate, --migrate-sharepoint, " +
+        "--baseline-existing-database, or --seed-only.");
+}
+var hostArguments = args.Where(value => !migrationArguments.Contains(value)).ToArray();
 var builder = WebApplication.CreateBuilder(hostArguments);
 
 var repositoryRoot = Path.GetFullPath("..", builder.Environment.ContentRootPath);
@@ -28,6 +44,7 @@ builder.Services.AddSingleton<PasswordHasher>();
 builder.Services.AddSingleton<TokenService>();
 builder.Services.AddSingleton<DocumentStorage>();
 builder.Services.AddScoped<DatabaseBootstrapper>();
+builder.Services.AddScoped<DatabaseMigrationManager>();
 builder.Services.AddScoped<PortalSignInService>();
 builder.Services.AddScoped<SharePointSyncService>();
 builder.Services.AddScoped<SharePointOutboxService>();
@@ -129,7 +146,33 @@ app.MapGet("/api/health", () => Results.Ok(new { status = "healthy", service = p
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
-    await scope.ServiceProvider.GetRequiredService<DatabaseBootstrapper>().InitializeAsync();
+    var migrations = scope.ServiceProvider.GetRequiredService<DatabaseMigrationManager>();
+    var bootstrapper = scope.ServiceProvider.GetRequiredService<DatabaseBootstrapper>();
+    if (migrateSharePointOnly)
+    {
+        var result = await scope.ServiceProvider.GetRequiredService<ISharePointClient>().ProvisionAsync();
+        Console.WriteLine(
+            $"SharePoint schema migration completed successfully. Current version: {result.SchemaVersion}.");
+        return;
+    }
+    if (migrateOnly)
+    {
+        await migrations.ApplyAsync();
+        Console.WriteLine("Database migrations applied successfully.");
+        return;
+    }
+    if (baselineOnly)
+    {
+        await bootstrapper.PrepareExistingSchemaForMigrationBaselineAsync();
+        var created = await migrations.BaselineExistingAsync();
+        Console.WriteLine(created
+            ? "Existing database validated and migration baseline recorded successfully."
+            : "The migration baseline is already recorded.");
+        return;
+    }
+
+    await migrations.EnsureReadyAsync();
+    await bootstrapper.InitializeAsync();
 }
 
 if (seedOnly)

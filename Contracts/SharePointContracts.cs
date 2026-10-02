@@ -27,10 +27,18 @@ public sealed record SharePointSetupResource(
     string? Template,
     string Status);
 
+public sealed record SharePointMigrationResult(
+    string Id,
+    string Description,
+    string Status,
+    DateTime? AppliedAt);
+
 public sealed record SharePointSetupResponse(
     string SiteId,
     string? SiteUrl,
-    IReadOnlyList<SharePointSetupResource> Resources);
+    string SchemaVersion,
+    IReadOnlyList<SharePointSetupResource> Resources,
+    IReadOnlyList<SharePointMigrationResult> Migrations);
 
 public sealed record SharePointSyncResponse(
     string Message,

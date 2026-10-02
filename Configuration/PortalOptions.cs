@@ -7,7 +7,6 @@ public sealed class PortalOptions
     public required string SecretKey { get; init; }
     public int AccessTokenMinutes { get; init; } = 480;
     public string[] FrontendOrigins { get; init; } = ["http://localhost:5173"];
-    public bool AutoCreateSchema { get; init; }
     public bool SeedDemoData { get; init; }
     public string BootstrapAdminEmail { get; init; } = "";
     public string BootstrapAdminPassword { get; init; } = "";
@@ -48,6 +47,7 @@ public sealed class PortalOptions
     public string SharePointCooperativeTrainingList { get; init; } = "Cooperative Training Requests";
     public string SharePointCooperativeTrainingDocumentsLibrary { get; init; } = "Cooperative Training Documents";
     public string SharePointResumesLibrary { get; init; } = "Candidate Resume Files";
+    public string SharePointMigrationsList { get; init; } = "Portal Schema Migrations";
     public double SharePointTimeoutSeconds { get; init; } = 30;
     public bool SharePointSyncEnabled { get; init; }
 
@@ -100,7 +100,6 @@ public sealed class PortalOptions
             SecretKey = configuration["SECRET_KEY"] ?? "development-only-change-me",
             AccessTokenMinutes = Number(configuration, "ACCESS_TOKEN_MINUTES", 480),
             FrontendOrigins = frontendOrigins,
-            AutoCreateSchema = Flag(configuration, "AUTO_CREATE_SCHEMA"),
             SeedDemoData = Flag(configuration, "SEED_DEMO_DATA"),
             BootstrapAdminEmail = (configuration["BOOTSTRAP_ADMIN_EMAIL"] ?? "").Trim().ToLowerInvariant(),
             BootstrapAdminPassword = configuration["BOOTSTRAP_ADMIN_PASSWORD"] ?? "",
@@ -141,6 +140,7 @@ public sealed class PortalOptions
             SharePointCooperativeTrainingList = configuration["SHAREPOINT_COOPERATIVE_TRAINING_LIST"] ?? "Cooperative Training Requests",
             SharePointCooperativeTrainingDocumentsLibrary = configuration["SHAREPOINT_COOPERATIVE_TRAINING_DOCUMENTS_LIBRARY"] ?? "Cooperative Training Documents",
             SharePointResumesLibrary = configuration["SHAREPOINT_RESUMES_LIBRARY"] ?? "Candidate Resume Files",
+            SharePointMigrationsList = configuration["SHAREPOINT_MIGRATIONS_LIST"] ?? "Portal Schema Migrations",
             SharePointTimeoutSeconds = DecimalNumber(configuration, "SHAREPOINT_TIMEOUT_SECONDS", 30),
             SharePointSyncEnabled = Flag(configuration, "SHAREPOINT_SYNC_ENABLED"),
         };

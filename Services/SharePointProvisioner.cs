@@ -7,12 +7,91 @@ namespace CandidatePortal.Api.Services;
 
 internal static class SharePointProvisioner
 {
+    private delegate Task<IReadOnlyList<SharePointSetupResource>> MigrationAction(
+        GraphSharePointClient client,
+        PortalOptions options,
+        string siteId,
+        CancellationToken cancellationToken);
+
+    private sealed record MigrationDefinition(string Id, string Description, MigrationAction Apply);
+
+    private static readonly MigrationDefinition[] SchemaMigrations =
+    [
+        new(
+            "SP202609300001_InitialBaseline",
+            "Create or repair the current Candidate Portal SharePoint lists, libraries, columns, and choices.",
+            ApplyInitialSchema),
+    ];
+
     public static async Task<SharePointSetupResponse> ProvisionAsync(
         GraphSharePointClient client,
         PortalOptions options,
         CancellationToken cancellationToken)
     {
         var siteId = await client.GetSiteIdAsync(cancellationToken);
+        var migrationList = await EnsureList(
+            client, siteId, options.SharePointMigrationsList, "genericList", cancellationToken);
+        await EnsureColumns(client, siteId, migrationList.Id, MigrationHistoryColumns(), cancellationToken);
+        client.ClearListCache();
+
+        var recordedMigrations = (await client.ListItemsAsync(options.SharePointMigrationsList, cancellationToken))
+            .Where(item => item.Fields.TryGetValue("Title", out var value) &&
+                !string.IsNullOrWhiteSpace(Convert.ToString(value)))
+            .GroupBy(item => Convert.ToString(item.Fields["Title"])!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.OrderBy(item => item.CreatedAt).First(),
+                StringComparer.OrdinalIgnoreCase);
+        var resources = new Dictionary<string, SharePointSetupResource>(StringComparer.OrdinalIgnoreCase)
+        {
+            [options.SharePointMigrationsList] = migrationList,
+        };
+        var results = new List<SharePointMigrationResult>();
+
+        foreach (var migration in SchemaMigrations)
+        {
+            var migrationResources = await migration.Apply(client, options, siteId, cancellationToken);
+            foreach (var resource in migrationResources)
+            {
+                resources[resource.DisplayName ?? resource.Name ?? resource.Id] = resource;
+            }
+
+            if (recordedMigrations.TryGetValue(migration.Id, out var existing))
+            {
+                results.Add(new SharePointMigrationResult(
+                    migration.Id, migration.Description, "verified", MigrationAppliedAt(existing)));
+                continue;
+            }
+
+            client.ClearListCache();
+            var appliedAt = DateTime.UtcNow;
+            var recorded = await client.CreateItemAsync(
+                options.SharePointMigrationsList,
+                new Dictionary<string, object?>
+                {
+                    ["Title"] = migration.Id,
+                    ["ProductVersion"] = typeof(SharePointProvisioner).Assembly.GetName().Version?.ToString() ?? "unknown",
+                    ["AppliedAt"] = appliedAt.ToString("O"),
+                    ["Description"] = migration.Description,
+                },
+                cancellationToken);
+            results.Add(new SharePointMigrationResult(
+                migration.Id, migration.Description, "applied", MigrationAppliedAt(recorded) ?? appliedAt));
+        }
+
+        client.ClearListCache();
+        return new SharePointSetupResponse(
+            siteId,
+            string.IsNullOrWhiteSpace(options.SharePointSiteUrl) ? null : options.SharePointSiteUrl,
+            SchemaMigrations[^1].Id,
+            resources.Values.ToArray(),
+            results);
+    }
+
+    private static async Task<IReadOnlyList<SharePointSetupResource>> ApplyInitialSchema(
+        GraphSharePointClient client,
+        PortalOptions options,
+        string siteId,
+        CancellationToken cancellationToken)
+    {
         var resources = new List<SharePointSetupResource>();
         var candidates = await EnsureList(client, siteId, options.SharePointCandidatesList, "genericList", cancellationToken);
         resources.Add(candidates);
@@ -41,8 +120,17 @@ internal static class SharePointProvisioner
         await EnsureColumns(client, siteId,
             resources.Single(value => value.DisplayName == options.SharePointCooperativeTrainingDocumentsLibrary).Id,
             TrainingDocumentColumns(training.Id), cancellationToken);
-        client.ClearListCache();
-        return new SharePointSetupResponse(siteId, string.IsNullOrWhiteSpace(options.SharePointSiteUrl) ? null : options.SharePointSiteUrl, resources);
+        return resources;
+    }
+
+    private static DateTime? MigrationAppliedAt(SharePointItemResponse item)
+    {
+        if (item.Fields.TryGetValue("AppliedAt", out var value) &&
+            DateTime.TryParse(Convert.ToString(value), out var parsed))
+        {
+            return parsed;
+        }
+        return item.CreatedAt;
     }
 
     private static async Task<SharePointSetupResource> EnsureList(
@@ -100,6 +188,7 @@ internal static class SharePointProvisioner
                         string.Equals(columnName.GetString(), name, StringComparison.OrdinalIgnoreCase)) ||
                     (value.TryGetProperty("displayName", out var columnDisplayName) &&
                         string.Equals(columnDisplayName.GetString(), displayName, StringComparison.OrdinalIgnoreCase)));
+                ValidateColumnType(column, definition, displayName);
                 await AddMissingChoiceValues(client, siteId, listId, column, definition, cancellationToken);
                 await SyncRequiredSetting(client, siteId, listId, column, definition, cancellationToken);
                 continue;
@@ -110,6 +199,24 @@ internal static class SharePointProvisioner
             existing.Add(name);
             existing.Add(displayName);
         }
+    }
+
+    private static void ValidateColumnType(
+        JsonElement column,
+        IReadOnlyDictionary<string, object?> definition,
+        string displayName)
+    {
+        var expectedType = new[] { "text", "choice", "boolean", "dateTime", "number", "lookup", "hyperlinkOrPicture" }
+            .FirstOrDefault(definition.ContainsKey);
+        if (expectedType is null || column.TryGetProperty(expectedType, out _))
+        {
+            return;
+        }
+
+        var internalName = column.TryGetProperty("name", out var name) ? name.GetString() : null;
+        throw new ApiException(503,
+            $"SharePoint column '{displayName}'{(internalName is null ? "" : $" (internal name '{internalName}')")} " +
+            $"has a different type; expected '{expectedType}'. Create a compatible column before continuing.");
     }
 
     private static async Task AddMissingChoiceValues(
@@ -211,6 +318,13 @@ internal static class SharePointProvisioner
         ["required"] = true,
         ["lookup"] = new { allowMultipleValues = false, allowUnlimitedLength = false, columnName = "Title", listId },
     };
+
+    private static IReadOnlyList<Dictionary<string, object?>> MigrationHistoryColumns() =>
+    [
+        Text("ProductVersion"),
+        Date("AppliedAt"),
+        Text("Description", multiline: true),
+    ];
 
     private static IReadOnlyList<Dictionary<string, object?>> CandidateColumns() =>
     [
