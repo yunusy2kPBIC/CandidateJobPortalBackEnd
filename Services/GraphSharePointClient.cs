@@ -15,6 +15,7 @@ public sealed class GraphSharePointClient(HttpClient httpClient, PortalOptions o
     private const string GraphBaseUrl = "https://graph.microsoft.com/v1.0";
     private readonly SemaphoreSlim tokenLock = new(1, 1);
     private readonly ConcurrentDictionary<string, SharePointListResponse> listCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, string>> columnNameCache = new(StringComparer.OrdinalIgnoreCase);
     private string? accessToken;
     private DateTimeOffset tokenExpiresAt;
     private string? siteId = string.IsNullOrWhiteSpace(options.SharePointSiteId) ? null : options.SharePointSiteId;
@@ -35,6 +36,7 @@ public sealed class GraphSharePointClient(HttpClient httpClient, PortalOptions o
             cooperative_training = options.SharePointCooperativeTrainingList,
             cooperative_training_documents = options.SharePointCooperativeTrainingDocumentsLibrary,
             resumes = options.SharePointResumesLibrary,
+            migrations = options.SharePointMigrationsList,
         },
     };
 
@@ -105,20 +107,8 @@ public sealed class GraphSharePointClient(HttpClient httpClient, PortalOptions o
     public async Task<string> ResolveColumnNameAsync(
         string listName, string expectedName, CancellationToken cancellationToken = default)
     {
-        var site = await GetSiteIdAsync(cancellationToken);
-        var list = await GetListAsync(listName, cancellationToken);
-        var columns = await GetCollectionAsync(
-            $"/sites/{Uri.EscapeDataString(site)}/lists/{Uri.EscapeDataString(list.Id)}/columns?" +
-            "$select=name,displayName", cancellationToken);
-        var exact = columns.FirstOrDefault(column =>
-            string.Equals(GetString(column, "name"), expectedName, StringComparison.OrdinalIgnoreCase));
-        if (exact.ValueKind != JsonValueKind.Undefined)
-            return GetString(exact, "name") ?? expectedName;
-        var displayMatch = columns.FirstOrDefault(column =>
-            string.Equals(GetString(column, "displayName"), expectedName, StringComparison.OrdinalIgnoreCase));
-        return displayMatch.ValueKind == JsonValueKind.Undefined
-            ? expectedName
-            : GetString(displayMatch, "name") ?? expectedName;
+        var columns = await GetColumnNameMapAsync(listName, cancellationToken);
+        return columns.TryGetValue(expectedName, out var resolved) ? resolved : expectedName;
     }
 
     public async Task<IReadOnlyList<SharePointItemResponse>> ListItemsAsync(string listName, CancellationToken cancellationToken = default)
@@ -142,8 +132,9 @@ public sealed class GraphSharePointClient(HttpClient httpClient, PortalOptions o
     public async Task<SharePointItemResponse?> FindItemByFieldAsync(string listName, string fieldName, string value, CancellationToken cancellationToken = default)
     {
         var expected = value.Trim();
+        var resolvedFieldName = await ResolveColumnNameAsync(listName, fieldName, cancellationToken);
         return (await ListItemsAsync(listName, cancellationToken)).FirstOrDefault(item =>
-            item.Fields.TryGetValue(fieldName, out var actual) &&
+            (item.Fields.TryGetValue(resolvedFieldName, out var actual) || item.Fields.TryGetValue(fieldName, out actual)) &&
             string.Equals(Convert.ToString(actual)?.Trim(), expected, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -152,7 +143,8 @@ public sealed class GraphSharePointClient(HttpClient httpClient, PortalOptions o
         var list = await GetListAsync(listName, cancellationToken);
         var site = Uri.EscapeDataString(await GetSiteIdAsync(cancellationToken));
         var listId = Uri.EscapeDataString(list.Id);
-        using var created = await SendAsync(HttpMethod.Post, $"/sites/{site}/lists/{listId}/items", new { fields }, null, cancellationToken);
+        var resolvedFields = await ResolveFieldNamesAsync(listName, fields, cancellationToken);
+        using var created = await SendAsync(HttpMethod.Post, $"/sites/{site}/lists/{listId}/items", new { fields = resolvedFields }, null, cancellationToken);
         if (created is null || !created.RootElement.TryGetProperty("id", out var idElement) ||
             !int.TryParse(idElement.GetString(), out var itemId))
         {
@@ -170,7 +162,8 @@ public sealed class GraphSharePointClient(HttpClient httpClient, PortalOptions o
         var list = await GetListAsync(listName, cancellationToken);
         var site = Uri.EscapeDataString(await GetSiteIdAsync(cancellationToken));
         var listId = Uri.EscapeDataString(list.Id);
-        using var _ = await SendAsync(HttpMethod.Patch, $"/sites/{site}/lists/{listId}/items/{itemId}/fields", fields, null, cancellationToken);
+        var resolvedFields = await ResolveFieldNamesAsync(listName, fields, cancellationToken);
+        using var _ = await SendAsync(HttpMethod.Patch, $"/sites/{site}/lists/{listId}/items/{itemId}/fields", resolvedFields, null, cancellationToken);
         return await GetItemAsync(listName, itemId, cancellationToken);
     }
 
@@ -286,7 +279,11 @@ public sealed class GraphSharePointClient(HttpClient httpClient, PortalOptions o
         throw GraphError("Microsoft Graph authentication failed after token refresh");
     }
 
-    internal void ClearListCache() => listCache.Clear();
+    internal void ClearListCache()
+    {
+        listCache.Clear();
+        columnNameCache.Clear();
+    }
 
     private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
     {
@@ -326,6 +323,75 @@ public sealed class GraphSharePointClient(HttpClient httpClient, PortalOptions o
         if (list is null) throw GraphError($"SharePoint list or library '{displayName}' was not found");
         listCache[displayName] = list;
         return list;
+    }
+
+    private async Task<IReadOnlyDictionary<string, string>> GetColumnNameMapAsync(
+        string listName,
+        CancellationToken cancellationToken)
+    {
+        if (columnNameCache.TryGetValue(listName, out var cached))
+        {
+            return cached;
+        }
+
+        var site = await GetSiteIdAsync(cancellationToken);
+        var list = await GetListAsync(listName, cancellationToken);
+        var columns = await GetCollectionAsync(
+            $"/sites/{Uri.EscapeDataString(site)}/lists/{Uri.EscapeDataString(list.Id)}/columns?" +
+            "$select=name,displayName", cancellationToken);
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in columns)
+        {
+            var name = GetString(column, "name");
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            result[name] = name;
+            var displayName = GetString(column, "displayName");
+            if (!string.IsNullOrWhiteSpace(displayName) && !result.ContainsKey(displayName))
+            {
+                result[displayName] = name;
+            }
+        }
+
+        columnNameCache[listName] = result;
+        return result;
+    }
+
+    private async Task<IReadOnlyDictionary<string, object?>> ResolveFieldNamesAsync(
+        string listName,
+        IReadOnlyDictionary<string, object?> fields,
+        CancellationToken cancellationToken)
+    {
+        const string lookupSuffix = "LookupId";
+        var columns = await GetColumnNameMapAsync(listName, cancellationToken);
+        var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in fields)
+        {
+            string resolvedName;
+            if (field.Key.EndsWith(lookupSuffix, StringComparison.OrdinalIgnoreCase))
+            {
+                var expectedColumn = field.Key[..^lookupSuffix.Length];
+                resolvedName = (columns.TryGetValue(expectedColumn, out var lookupColumn)
+                    ? lookupColumn
+                    : expectedColumn) + lookupSuffix;
+            }
+            else
+            {
+                resolvedName = columns.TryGetValue(field.Key, out var columnName)
+                    ? columnName
+                    : field.Key;
+            }
+
+            if (!result.TryAdd(resolvedName, field.Value))
+            {
+                throw new ApiException(503,
+                    $"Multiple configured SharePoint fields resolve to the internal column '{resolvedName}' in '{listName}'.");
+            }
+        }
+        return result;
     }
 
     private async Task<IReadOnlyList<JsonElement>> GetCollectionAsync(string path, CancellationToken cancellationToken)

@@ -28,10 +28,20 @@ public sealed class AdminController(
         var today = PortalClock.UtcNow().Date;
         var tomorrow = today.AddDays(1);
         var openJobs = await database.Jobs.CountAsync(
-            value => value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
+            value => !value.IsDeletion && value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
                 (value.ExpiresAt == null || value.ExpiresAt >= today), cancellationToken);
-        var applications = await database.Applications.CountAsync(cancellationToken);
-        return new AdminSummaryResponse(users, candidates, admins, openJobs, applications);
+        var closedJobs = await database.Jobs.CountAsync(
+            value => !value.IsDeletion && !(value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
+                (value.ExpiresAt == null || value.ExpiresAt >= today)), cancellationToken);
+        var applications = await database.Applications.CountAsync(value =>
+            value.Status == "Hired" || !database.Applications.Any(other =>
+                other.UserId == value.UserId && other.Id != value.Id && other.Status == "Hired"), cancellationToken);
+        var hiredCandidates = await database.Applications
+            .Where(value => value.Status == "Hired")
+            .Select(value => value.UserId)
+            .Distinct()
+            .CountAsync(cancellationToken);
+        return new AdminSummaryResponse(users, candidates, admins, openJobs, closedJobs, applications, hiredCandidates);
     }
 
     [Authorize(Roles = PortalRoles.Administrator)]
@@ -132,13 +142,19 @@ public sealed class AdminController(
             throw new ApiException(400, "employment_type is invalid");
         var job = await database.Jobs.FindAsync([jobId], cancellationToken)
             ?? throw new ApiException(404, "Job not found");
-        await masterData.ValidateJobAsync(
-            payload.Country ?? job.Country,
-            payload.City ?? job.City,
-            payload.Division ?? job.Division,
-            payload.JobFunction ?? job.JobFunction,
-            payload.CareerLevel ?? job.CareerLevel,
-            cancellationToken);
+        if (job.IsDeletion)
+            throw new ApiException(409, "Restore this job before editing it");
+        if (payload.Country is not null || payload.City is not null)
+            await masterData.ValidateCountryCityAsync(
+                payload.Country ?? job.Country,
+                payload.City ?? job.City,
+                cancellationToken);
+        if (payload.Division is not null)
+            await masterData.ValidateDivisionAsync(payload.Division, cancellationToken);
+        if (payload.JobFunction is not null)
+            await masterData.ValidateJobFunctionAsync(payload.JobFunction, cancellationToken);
+        if (payload.CareerLevel is not null)
+            await masterData.ValidateCareerLevelAsync(payload.CareerLevel, cancellationToken);
         var postedAt = payload.PostedAt?.Date ?? job.PostedAt.Date;
         var expiresAt = payload.ExpiresAt?.Date ?? job.ExpiresAt?.Date;
         if (payload.PostedAt is not null && payload.PostedAt.Value.Date != job.PostedAt.Date)
@@ -181,17 +197,36 @@ public sealed class AdminController(
     {
         var job = await database.Jobs.FindAsync([jobId], cancellationToken)
             ?? throw new ApiException(404, "Job not found");
-        if (await database.Applications.AnyAsync(value => value.JobId == job.Id, cancellationToken))
-            throw new ApiException(409, "This job has candidate applications and cannot be deleted. Close it instead.");
+        if (job.IsDeletion)
+            return new MessageResponse("Job posting is already marked for deletion");
 
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        job.IsDeletion = true;
         sharePointOutbox.EnqueueJobDelete(job.Id);
-        auditLogs.Add(CurrentUserId, "Deleted", "Job posting", job.Id.ToString(),
-            $"Deleted job “{job.Title}”.");
-        database.Jobs.Remove(job);
+        auditLogs.Add(CurrentUserId, "Marked for deletion", "Job posting", job.Id.ToString(),
+            $"Marked job '{job.Title}' for deletion.");
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return new MessageResponse("Job posting deleted successfully");
+        return new MessageResponse("Job posting marked for deletion");
+    }
+
+    [Authorize(Roles = PortalRoles.Administrator)]
+    [HttpPost("jobs/{jobId:int}/restore")]
+    public async Task<ActionResult<JobResponse>> RestoreJob(int jobId, CancellationToken cancellationToken)
+    {
+        var job = await database.Jobs.FindAsync([jobId], cancellationToken)
+            ?? throw new ApiException(404, "Job not found");
+        if (!job.IsDeletion)
+            return job.ToResponse();
+
+        await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
+        job.IsDeletion = false;
+        sharePointOutbox.EnqueueJob(job.Id);
+        auditLogs.Add(CurrentUserId, "Restored", "Job posting", job.Id.ToString(),
+            $"Restored job '{job.Title}'.");
+        await database.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return job.ToResponse();
     }
 
     [HttpGet("candidates")]
@@ -202,7 +237,13 @@ public sealed class AdminController(
             .Where(value => value.Role == PortalRoles.Candidate)
             .OrderByDescending(value => value.CreatedAt)
             .ThenByDescending(value => value.Id)
-            .Select(value => new { User = value, ApplicationCount = value.Applications.Count })
+            .Select(value => new
+            {
+                User = value,
+                ApplicationCount = value.Applications.Count(application =>
+                    application.Status == "Hired" || !value.Applications.Any(other =>
+                        other.Id != application.Id && other.Status == "Hired")),
+            })
             .ToListAsync(cancellationToken);
         return rows.Select(value => CandidateResponse(value.User, value.ApplicationCount)).ToArray();
     }
@@ -247,7 +288,22 @@ public sealed class AdminController(
         var applications = await query.OrderByDescending(value => value.AppliedAt)
             .ThenByDescending(value => value.Id)
             .ToListAsync(cancellationToken);
-        return applications.Select(ApplicationResponse).ToArray();
+        if (applications.Count == 0) return Array.Empty<AdminApplicationResponse>();
+
+        var candidateIds = applications.Select(value => value.UserId).Distinct().ToArray();
+        var applicationStatuses = await database.Applications.AsNoTracking()
+            .Where(value => candidateIds.Contains(value.UserId))
+            .Select(value => new { value.UserId, value.Status })
+            .ToListAsync(cancellationToken);
+        var applicationCounts = applicationStatuses
+            .GroupBy(value => value.UserId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Any(value => value.Status == "Hired")
+                    ? group.Count(value => value.Status == "Hired")
+                    : group.Count());
+        return applications.Select(value => ApplicationResponse(
+            value, applicationCounts.GetValueOrDefault(value.UserId))).ToArray();
     }
 
     [HttpPatch("applications/{applicationId:int}/status")]
@@ -258,20 +314,23 @@ public sealed class AdminController(
             throw new ApiException(400, "status is invalid");
         var application = await database.Applications
             .Include(value => value.Job)
-            .Include(value => value.User).ThenInclude(value => value.Applications)
+            .Include(value => value.User)
             .SingleOrDefaultAsync(value => value.Id == applicationId, cancellationToken)
             ?? throw new ApiException(404, "Application not found");
 
-        var hiredApplication = application.User.Applications.FirstOrDefault(value =>
-            value.Id != application.Id && value.Status == "Hired");
-        if (hiredApplication is not null)
+        var hiredApplicationId = await database.Applications.AsNoTracking()
+            .Where(value => value.UserId == application.UserId && value.Id != application.Id && value.Status == "Hired")
+            .Select(value => (int?)value.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (hiredApplicationId is not null)
             throw new ApiException(409,
-                $"This application is disabled because the candidate was hired under APP-{hiredApplication.Id:0000}");
+                $"This application is disabled because the candidate was hired under APP-{hiredApplicationId.Value:0000}");
 
         if (application.Status != payload.Status)
         {
             var previousStatus = application.Status;
             application.Status = payload.Status;
+            application.HiredAt = payload.Status == "Hired" ? PortalClock.UtcNow() : null;
             database.Notifications.Add(new Notification
             {
                 UserId = application.UserId,
@@ -287,7 +346,7 @@ public sealed class AdminController(
         sharePointOutbox.EnqueueApplication(application.Id);
         await database.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return ApplicationResponse(application);
+        return ApplicationResponse(application, await ActiveApplicationCountAsync(application.UserId, cancellationToken));
     }
 
     private AdminCandidateResponse CandidateResponse(User user, int applicationCount) => new(
@@ -305,9 +364,19 @@ public sealed class AdminController(
             : $"/api/admin/candidates/{user.Id}/resume";
     }
 
-    private AdminApplicationResponse ApplicationResponse(Application application) => new(
-        application.Id, $"APP-{application.Id:0000}", application.Status, application.AppliedAt,
-        CandidateResponse(application.User, application.User.Applications.Count), application.Job.ToResponse());
+    private AdminApplicationResponse ApplicationResponse(Application application, int applicationCount) => new(
+        application.Id, $"APP-{application.Id:0000}", application.Status, application.AppliedAt, application.HiredAt,
+        CandidateResponse(application.User, applicationCount), application.Job.ToResponse());
+
+    private async Task<int> ActiveApplicationCountAsync(int userId, CancellationToken cancellationToken)
+    {
+        var statuses = await database.Applications.AsNoTracking()
+            .Where(value => value.UserId == userId)
+            .Select(value => value.Status)
+            .ToListAsync(cancellationToken);
+        var hiredCount = statuses.Count(value => value == "Hired");
+        return hiredCount > 0 ? hiredCount : statuses.Count;
+    }
 
     private static void ValidateEmploymentType(string employmentType)
     {

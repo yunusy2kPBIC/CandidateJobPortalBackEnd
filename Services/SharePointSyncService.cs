@@ -36,6 +36,7 @@ public sealed class SharePointSyncService(ISharePointClient client, PortalOption
                 ["CandidateJobKey"] = $"{application.UserId}:{application.JobId}",
                 ["Status"] = application.Status,
                 ["AppliedAt"] = GraphDateTime(application.AppliedAt),
+                ["HiredAt"] = application.HiredAt is null ? null : GraphDateTime(application.HiredAt.Value),
             }, cancellationToken: cancellationToken);
     }
 

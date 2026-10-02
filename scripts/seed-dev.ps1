@@ -6,12 +6,14 @@ $ErrorActionPreference = "Stop"
 
 $projectPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\CandidatePortal.Api.csproj"))
 $previousSeedDemoData = [Environment]::GetEnvironmentVariable("SEED_DEMO_DATA", "Process")
-$previousAutoCreateSchema = [Environment]::GetEnvironmentVariable("AUTO_CREATE_SCHEMA", "Process")
 
 try {
     $env:SEED_DEMO_DATA = "true"
     if ($CreateSchema) {
-        $env:AUTO_CREATE_SCHEMA = "true"
+        dotnet run --project $projectPath -- --migrate
+        if ($LASTEXITCODE -ne 0) {
+            throw "Development database migration failed with exit code $LASTEXITCODE."
+        }
     }
 
     dotnet run --project $projectPath -- --seed-only
@@ -25,13 +27,6 @@ finally {
     }
     else {
         $env:SEED_DEMO_DATA = $previousSeedDemoData
-    }
-
-    if ($null -eq $previousAutoCreateSchema) {
-        Remove-Item Env:AUTO_CREATE_SCHEMA -ErrorAction SilentlyContinue
-    }
-    else {
-        $env:AUTO_CREATE_SCHEMA = $previousAutoCreateSchema
     }
 }
 

@@ -141,7 +141,12 @@ public sealed class SharePointOutboxWorker(
                 var job = await database.Jobs.AsNoTracking()
                     .SingleOrDefaultAsync(value => value.Id == item.EntityId, cancellationToken);
                 if (job is not null)
-                    await synchronization.SyncJobAsync(job, cancellationToken);
+                {
+                    if (job.IsDeletion)
+                        await synchronization.DeleteJobByPortalIdAsync(job.Id, cancellationToken);
+                    else
+                        await synchronization.SyncJobAsync(job, cancellationToken);
+                }
                 break;
             }
             case SharePointOutboxOperations.JobDelete:
@@ -153,7 +158,7 @@ public sealed class SharePointOutboxWorker(
                     .Include(value => value.User)
                     .Include(value => value.Job)
                     .SingleOrDefaultAsync(value => value.Id == item.EntityId, cancellationToken);
-                if (application is not null)
+                if (application is not null && !application.Job.IsDeletion)
                     await synchronization.SyncApplicationAsync(application, cancellationToken);
                 break;
             }

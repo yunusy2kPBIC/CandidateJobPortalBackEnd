@@ -78,8 +78,5 @@ public sealed class VerificationEmailService(
         return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{userId}:{code}")));
     }
 
-    private bool ShouldExposeCode =>
-        !options.EmailEnabled ||
-        (string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase) &&
-         options.ExposeDevelopmentVerificationCode);
+    private bool ShouldExposeCode => !options.EmailEnabled;
 }

@@ -145,6 +145,7 @@ public sealed record JobResponse(
     bool IsOpen,
     bool IsPublished,
     bool IsFeatured,
+    bool IsDeletion,
     DateTime PostedAt,
     DateTime? ExpiresAt);
 
@@ -179,7 +180,14 @@ public sealed record DashboardResponse(
     int ProfileComplete,
     IReadOnlyList<DashboardActivity> RecentActivity);
 
-public sealed record AdminSummaryResponse(int Users, int Candidates, int Admins, int OpenJobs, int Applications);
+public sealed record AdminSummaryResponse(
+    int Users,
+    int Candidates,
+    int Admins,
+    int OpenJobs,
+    int ClosedJobs,
+    int Applications,
+    int HiredCandidates);
 
 public sealed record AdminJobOptionsResponse(
     IReadOnlyList<string> Countries,
@@ -265,6 +273,7 @@ public sealed record AdminApplicationResponse(
     string ApplicationCode,
     string Status,
     DateTime AppliedAt,
+    DateTime? HiredAt,
     AdminCandidateResponse Candidate,
     JobResponse Job);
 
@@ -306,7 +315,7 @@ public static class PortalMappings
     public static JobResponse ToResponse(this Job job) => new(
         job.Id, job.Title, job.Division, job.Country, job.City, job.JobFunction,
         job.CareerLevel, job.EmploymentType, job.Summary, job.Description, job.Requirements,
-        job.IsOpen, job.IsPublished, job.IsFeatured, job.PostedAt, job.ExpiresAt);
+        job.IsOpen, job.IsPublished, job.IsFeatured, job.IsDeletion, job.PostedAt, job.ExpiresAt);
 
     public static ApplicationResponse ToResponse(this Application application) => new(
         application.Id, $"APP-{application.Id:0000}", application.Status,

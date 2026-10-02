@@ -7,14 +7,12 @@ public sealed class PortalOptions
     public required string SecretKey { get; init; }
     public int AccessTokenMinutes { get; init; } = 480;
     public string[] FrontendOrigins { get; init; } = ["http://localhost:5173"];
-    public bool AutoCreateSchema { get; init; }
     public bool SeedDemoData { get; init; }
     public string BootstrapAdminEmail { get; init; } = "";
     public string BootstrapAdminPassword { get; init; } = "";
     public string BootstrapHrAdminEmail { get; init; } = "";
     public string BootstrapHrAdminPassword { get; init; } = "";
-    public bool EmailEnabled { get; init; } = true;
-    public string EmailDeliveryMode { get; init; } = "development";
+    public bool EmailEnabled { get; init; }
     public string EmailSenderAddress { get; init; } = "dev-no-reply@candidateportal.local";
     public string EmailSenderName { get; init; } = "PBICareerPosting";
     public string SmtpHost { get; init; } = "";
@@ -34,7 +32,6 @@ public sealed class PortalOptions
     public string PrivacyPolicyVersion { get; init; } = "1.0";
     public string PrivacyEffectiveDate { get; init; } = "2026-09-08";
     public string PrivacyContactEmail { get; init; } = "privacy@candidateportal.local";
-    public bool ExposeDevelopmentVerificationCode { get; init; } = true;
     public string StorageProvider { get; init; } = "local";
     public string LocalStoragePath { get; init; } = "../storage";
     public string SharePointTenantId { get; init; } = "";
@@ -50,6 +47,7 @@ public sealed class PortalOptions
     public string SharePointCooperativeTrainingList { get; init; } = "Cooperative Training Requests";
     public string SharePointCooperativeTrainingDocumentsLibrary { get; init; } = "Cooperative Training Documents";
     public string SharePointResumesLibrary { get; init; } = "Candidate Resume Files";
+    public string SharePointMigrationsList { get; init; } = "Portal Schema Migrations";
     public double SharePointTimeoutSeconds { get; init; } = 30;
     public bool SharePointSyncEnabled { get; init; }
 
@@ -102,14 +100,12 @@ public sealed class PortalOptions
             SecretKey = configuration["SECRET_KEY"] ?? "development-only-change-me",
             AccessTokenMinutes = Number(configuration, "ACCESS_TOKEN_MINUTES", 480),
             FrontendOrigins = frontendOrigins,
-            AutoCreateSchema = Flag(configuration, "AUTO_CREATE_SCHEMA"),
             SeedDemoData = Flag(configuration, "SEED_DEMO_DATA"),
             BootstrapAdminEmail = (configuration["BOOTSTRAP_ADMIN_EMAIL"] ?? "").Trim().ToLowerInvariant(),
             BootstrapAdminPassword = configuration["BOOTSTRAP_ADMIN_PASSWORD"] ?? "",
             BootstrapHrAdminEmail = (configuration["BOOTSTRAP_HR_ADMIN_EMAIL"] ?? "").Trim().ToLowerInvariant(),
             BootstrapHrAdminPassword = configuration["BOOTSTRAP_HR_ADMIN_PASSWORD"] ?? "",
-            EmailEnabled = YesNoFlag(configuration, "EMAIL_ENABLED", true),
-            EmailDeliveryMode = (configuration["EMAIL_DELIVERY_MODE"] ?? "development").Trim().ToLowerInvariant(),
+            EmailEnabled = YesNoFlag(configuration, "EMAIL_ENABLED"),
             EmailSenderAddress = (configuration["EMAIL_SENDER_ADDRESS"] ?? "dev-no-reply@candidateportal.local").Trim(),
             EmailSenderName = (configuration["EMAIL_SENDER_NAME"] ?? "PBICareerPosting").Trim(),
             SmtpHost = (configuration["SMTP_HOST"] ?? "").Trim(),
@@ -129,7 +125,6 @@ public sealed class PortalOptions
             PrivacyPolicyVersion = (configuration["PRIVACY_POLICY_VERSION"] ?? "1.0").Trim(),
             PrivacyEffectiveDate = (configuration["PRIVACY_EFFECTIVE_DATE"] ?? "2026-09-08").Trim(),
             PrivacyContactEmail = (configuration["PRIVACY_CONTACT_EMAIL"] ?? "privacy@candidateportal.local").Trim(),
-            ExposeDevelopmentVerificationCode = Flag(configuration, "EMAIL_EXPOSE_DEVELOPMENT_CODE", true),
             StorageProvider = configuration["STORAGE_PROVIDER"] ?? "local",
             LocalStoragePath = configuration["LOCAL_STORAGE_PATH"] ?? "../storage",
             SharePointTenantId = configuration["SHAREPOINT_TENANT_ID"] ?? "",
@@ -145,6 +140,7 @@ public sealed class PortalOptions
             SharePointCooperativeTrainingList = configuration["SHAREPOINT_COOPERATIVE_TRAINING_LIST"] ?? "Cooperative Training Requests",
             SharePointCooperativeTrainingDocumentsLibrary = configuration["SHAREPOINT_COOPERATIVE_TRAINING_DOCUMENTS_LIBRARY"] ?? "Cooperative Training Documents",
             SharePointResumesLibrary = configuration["SHAREPOINT_RESUMES_LIBRARY"] ?? "Candidate Resume Files",
+            SharePointMigrationsList = configuration["SHAREPOINT_MIGRATIONS_LIST"] ?? "Portal Schema Migrations",
             SharePointTimeoutSeconds = DecimalNumber(configuration, "SHAREPOINT_TIMEOUT_SECONDS", 30),
             SharePointSyncEnabled = Flag(configuration, "SHAREPOINT_SYNC_ENABLED"),
         };

@@ -26,7 +26,7 @@ public sealed class DashboardController(PortalDbContext database) : PortalContro
         var today = PortalClock.UtcNow().Date;
         var tomorrow = today.AddDays(1);
         var openJobs = await database.Jobs.CountAsync(
-            value => value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
+            value => !value.IsDeletion && value.IsPublished && value.IsOpen && value.PostedAt < tomorrow &&
                 (value.ExpiresAt == null || value.ExpiresAt >= today), cancellationToken);
         var profileFields = new[]
         {

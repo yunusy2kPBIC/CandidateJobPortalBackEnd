@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json.Serialization;
 using CandidatePortal.Api.Configuration;
 using CandidatePortal.Api.Infrastructure;
@@ -42,19 +43,7 @@ public sealed class SmtpEmailSender(
             return;
         }
 
-        if (string.Equals(options.EmailDeliveryMode, "development", StringComparison.OrdinalIgnoreCase))
-        {
-            logger.LogInformation(
-                "DEV EMAIL from {Sender} to {Recipient}. Subject: {Subject}. Body: {Body}",
-                options.EmailSenderAddress,
-                recipientAddress,
-                subject,
-                body);
-            return;
-        }
-
-        if (!string.Equals(options.EmailDeliveryMode, "smtp", StringComparison.OrdinalIgnoreCase) ||
-            !options.SmtpConfigured)
+        if (!options.SmtpConfigured)
         {
             throw new ApiException(503, "SMTP email delivery is not configured");
         }
@@ -89,12 +78,67 @@ public sealed class SmtpEmailSender(
         {
             throw;
         }
+        catch (HttpRequestException exception)
+        {
+            logger.LogError(exception, "Microsoft OAuth token acquisition for SMTP failed");
+            throw new ApiException(
+                503,
+                "Microsoft OAuth authentication failed. Verify the SMTP tenant, client ID, and client secret.",
+                exception);
+        }
+        catch (MailKit.Security.AuthenticationException exception)
+        {
+            logger.LogError(exception, "Office 365 SMTP authentication for {Username} failed", options.SmtpUsername);
+            throw new ApiException(
+                503,
+                "SMTP authentication failed. Verify SMTP.SendAsApp permission, admin consent, and the SMTP username.",
+                exception);
+        }
+        catch (SmtpCommandException exception) when (IsMailboxAccessFailure(exception))
+        {
+            logger.LogError(exception, "Office 365 could not open sender mailbox {Sender}", options.EmailSenderAddress);
+            throw new ApiException(
+                503,
+                "The sender mailbox could not be opened. Verify that it is active and grant the Exchange service principal FullAccess to it.",
+                exception);
+        }
+        catch (SmtpCommandException exception)
+        {
+            logger.LogError(
+                exception,
+                "Office 365 rejected SMTP delivery from {Sender} to {Recipient} with status {StatusCode}",
+                options.EmailSenderAddress,
+                recipientAddress,
+                (int)exception.StatusCode);
+            throw new ApiException(
+                503,
+                $"The email server rejected the message with SMTP status {(int)exception.StatusCode}. Verify the sender and recipient addresses.",
+                exception);
+        }
+        catch (Exception exception) when (
+            exception is SocketException or IOException or SmtpProtocolException)
+        {
+            logger.LogError(exception, "SMTP connection to {Host}:{Port} failed", options.SmtpHost, options.SmtpPort);
+            throw new ApiException(
+                503,
+                "Could not communicate with the SMTP server. Verify the SMTP host, port, TLS settings, and network access.",
+                exception);
+        }
         catch (Exception exception)
         {
             logger.LogError(exception, "Office 365 SMTP delivery to {Recipient} failed", recipientAddress);
-            throw new ApiException(503, "Email delivery failed. Please try again later.");
+            throw new ApiException(
+                503,
+                "Email delivery failed unexpectedly. Review the backend log for the underlying SMTP error.",
+                exception);
         }
     }
+
+    private static bool IsMailboxAccessFailure(SmtpCommandException exception) =>
+        (int)exception.StatusCode == 430 ||
+        exception.Message.Contains("Cannot open mailbox", StringComparison.OrdinalIgnoreCase) ||
+        exception.Message.Contains("MapiExceptionLogonFailed", StringComparison.OrdinalIgnoreCase) ||
+        exception.Message.Contains("no rights on this session", StringComparison.OrdinalIgnoreCase);
 
     private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
     {
