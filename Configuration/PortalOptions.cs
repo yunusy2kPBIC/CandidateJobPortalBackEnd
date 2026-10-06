@@ -26,7 +26,7 @@ public sealed class PortalOptions
     public int EmailVerificationMinutes { get; init; } = 10;
     public int EmailVerificationResendSeconds { get; init; } = 60;
     public int EmailVerificationMaxAttempts { get; init; } = 5;
-    public int PasswordResetMinutes { get; init; } = 10;
+    public int PasswordResetMinutes { get; init; } = 2;
     public int PasswordResetResendSeconds { get; init; } = 60;
     public int PasswordResetMaxAttempts { get; init; } = 5;
     public string PrivacyPolicyVersion { get; init; } = "1.0";
@@ -119,7 +119,7 @@ public sealed class PortalOptions
             EmailVerificationMinutes = Math.Clamp(Number(configuration, "EMAIL_VERIFICATION_MINUTES", 10), 5, 60),
             EmailVerificationResendSeconds = Math.Clamp(Number(configuration, "EMAIL_VERIFICATION_RESEND_SECONDS", 60), 30, 300),
             EmailVerificationMaxAttempts = Math.Clamp(Number(configuration, "EMAIL_VERIFICATION_MAX_ATTEMPTS", 5), 3, 10),
-            PasswordResetMinutes = Math.Clamp(Number(configuration, "PASSWORD_RESET_MINUTES", 10), 5, 60),
+            PasswordResetMinutes = Math.Clamp(Number(configuration, "PASSWORD_RESET_MINUTES", 2), 2, 60),
             PasswordResetResendSeconds = Math.Clamp(Number(configuration, "PASSWORD_RESET_RESEND_SECONDS", 60), 30, 300),
             PasswordResetMaxAttempts = Math.Clamp(Number(configuration, "PASSWORD_RESET_MAX_ATTEMPTS", 5), 3, 10),
             PrivacyPolicyVersion = (configuration["PRIVACY_POLICY_VERSION"] ?? "1.0").Trim(),
