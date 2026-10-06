@@ -12,10 +12,11 @@ namespace CandidatePortal.Api.Services;
 public sealed class PasswordRecoveryService(
     PortalDbContext database,
     PortalOptions options,
+    OtpAuditService otpAudit,
     IEmailSender emailSender)
 {
     private const string GenericMessage =
-        "If an active account exists for this email, password reset instructions have been generated.";
+        "If an active account exists for this email, a password reset verification code has been sent.";
 
     public int MaxAttempts => options.PasswordResetMaxAttempts;
 
@@ -49,18 +50,40 @@ public sealed class PasswordRecoveryService(
             reset = new PasswordReset { UserId = user.Id };
             database.PasswordResets.Add(reset);
         }
-        reset.CodeHash = Hash(user.Id, code);
+        var codeHash = Hash(user.Id, code);
+        reset.CodeHash = codeHash;
         reset.AttemptCount = 0;
         reset.CreatedAt = now;
         reset.ExpiresAt = now.AddMinutes(options.PasswordResetMinutes);
         reset.ResendAvailableAt = now.AddSeconds(options.PasswordResetResendSeconds);
         reset.ConsumedAt = null;
+        otpAudit.RecordIssued(
+            user.Id,
+            OtpPurposes.PasswordReset,
+            codeHash,
+            now,
+            reset.ExpiresAt);
         await database.SaveChangesAsync(cancellationToken);
 
+        var message = $"""
+            Hello {user.FirstName},
+
+            We received a request to reset your PBICareerPosting password. Use the verification code below to continue.
+
+            Username: {user.Email}
+            Verification code: {code}
+            Code expires: {reset.ExpiresAt:dd MMM yyyy 'at' HH:mm} UTC
+
+            Do not share this code with anyone. If you did not request a password reset, you can ignore this email and keep your existing password.
+
+            Regards,
+            PBICareerPosting Team
+            """;
         await emailSender.SendAsync(
             user.Email,
-            "Reset your PBICareerPosting password",
-            $"Your password reset code is {code}. It expires at {reset.ExpiresAt:O} UTC.",
+            "PBICareerPosting password reset verification code",
+            message,
+            EmailPurposes.PasswordReset,
             cancellationToken);
 
         return new PasswordRecoveryPendingResponse(
@@ -80,10 +103,23 @@ public sealed class PasswordRecoveryService(
 
     public Task SendPasswordChangedAsync(User user, CancellationToken cancellationToken = default)
     {
+        var message = $"""
+            Hello {user.FirstName},
+
+            Your PBICareerPosting password was updated successfully.
+
+            Username: {user.Email}
+
+            All existing sessions have been signed out. You can now sign in using your new password. If you did not make this change, contact candidate support immediately.
+
+            Regards,
+            PBICareerPosting Team
+            """;
         return emailSender.SendAsync(
             user.Email,
             "Your PBICareerPosting password was changed",
-            $"Hello {user.FirstName}, your password has been reset successfully. If you did not make this change, contact candidate support.",
+            message,
+            EmailPurposes.PasswordChanged,
             cancellationToken);
     }
 

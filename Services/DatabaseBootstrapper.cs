@@ -275,6 +275,7 @@ public sealed class DatabaseBootstrapper(
             "Human Resources", "Information Security", "Finance", "Customer Experience", "Operations",
         };
         var careerLevels = new[] { "Entry level", "Mid-level", "Senior" };
+        var nationalities = new[] { "Saudi Arabia", "GCC", "Others" };
         if (!existingCategories.Contains(LookupCategories.Division))
             for (var index = 0; index < divisions.Length; index++)
                 Add(LookupCategories.Division, divisions[index], null, (index + 1) * 10);
@@ -284,6 +285,9 @@ public sealed class DatabaseBootstrapper(
         if (!existingCategories.Contains(LookupCategories.CareerLevel))
             for (var index = 0; index < careerLevels.Length; index++)
                 Add(LookupCategories.CareerLevel, careerLevels[index], null, (index + 1) * 10);
+        if (!existingCategories.Contains(LookupCategories.Nationality))
+            for (var index = 0; index < nationalities.Length; index++)
+                Add(LookupCategories.Nationality, nationalities[index], null, (index + 1) * 10);
 
         await database.SaveChangesAsync(cancellationToken);
     }

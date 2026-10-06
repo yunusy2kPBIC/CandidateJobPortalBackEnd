@@ -11,6 +11,8 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
     public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<PasswordReset> PasswordResets => Set<PasswordReset>();
+    public DbSet<EmailLog> EmailLogs => Set<EmailLog>();
+    public DbSet<OtpLog> OtpLogs => Set<OtpLog>();
     public DbSet<UserConsent> UserConsents => Set<UserConsent>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<UserPreference> UserPreferences => Set<UserPreference>();
@@ -114,6 +116,36 @@ public sealed class PortalDbContext(DbContextOptions<PortalDbContext> options) :
         passwordReset.HasIndex(x => x.ExpiresAt);
         passwordReset.HasOne(x => x.User).WithOne(x => x.PasswordReset)
             .HasForeignKey<PasswordReset>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+
+        var emailLog = modelBuilder.Entity<EmailLog>();
+        emailLog.ToTable("email_logs").HasKey(x => x.Id);
+        emailLog.Property(x => x.Id).HasColumnName("id");
+        emailLog.Property(x => x.UserId).HasColumnName("user_id");
+        emailLog.Property(x => x.RecipientAddress).HasColumnName("recipient_address").HasMaxLength(255);
+        emailLog.Property(x => x.Purpose).HasColumnName("purpose").HasMaxLength(50);
+        emailLog.Property(x => x.Subject).HasColumnName("subject").HasMaxLength(255);
+        emailLog.Property(x => x.Status).HasColumnName("status").HasMaxLength(20);
+        emailLog.Property(x => x.FailureReason).HasColumnName("failure_reason").HasMaxLength(2000);
+        emailLog.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
+        emailLog.Property(x => x.CompletedAt).HasColumnName("completed_at").HasColumnType(timestampType);
+        emailLog.HasIndex(x => x.CreatedAt).HasDatabaseName("ix_email_logs_created_at");
+        emailLog.HasIndex(x => new { x.RecipientAddress, x.CreatedAt }).HasDatabaseName("ix_email_logs_recipient_created");
+        emailLog.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.SetNull);
+
+        var otpLog = modelBuilder.Entity<OtpLog>();
+        otpLog.ToTable("otp_logs").HasKey(x => x.Id);
+        otpLog.Property(x => x.Id).HasColumnName("id");
+        otpLog.Property(x => x.UserId).HasColumnName("user_id");
+        otpLog.Property(x => x.Purpose).HasColumnName("purpose").HasMaxLength(50);
+        otpLog.Property(x => x.CodeHash).HasColumnName("code_hash").HasMaxLength(64);
+        otpLog.Property(x => x.Status).HasColumnName("status").HasMaxLength(20);
+        otpLog.Property(x => x.AttemptCount).HasColumnName("attempt_count");
+        otpLog.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType(timestampType);
+        otpLog.Property(x => x.ExpiresAt).HasColumnName("expires_at").HasColumnType(timestampType);
+        otpLog.Property(x => x.ConsumedAt).HasColumnName("consumed_at").HasColumnType(timestampType);
+        otpLog.HasIndex(x => new { x.UserId, x.Purpose, x.CreatedAt }).HasDatabaseName("ix_otp_logs_user_purpose_created");
+        otpLog.HasIndex(x => new { x.Status, x.ExpiresAt }).HasDatabaseName("ix_otp_logs_status_expires");
+        otpLog.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
 
         var userConsent = modelBuilder.Entity<UserConsent>();
         userConsent.ToTable("user_consents").HasKey(x => x.Id);

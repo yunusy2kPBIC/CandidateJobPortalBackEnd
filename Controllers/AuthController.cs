@@ -20,6 +20,8 @@ public sealed class AuthController(
     MasterDataService masterData,
     VerificationEmailService verificationEmails,
     PasswordRecoveryService passwordRecovery,
+    EmailAuditService emailAudit,
+    OtpAuditService otpAudit,
     PrivacyNoticeService privacyNotice) : PortalControllerBase
 {
     [AllowAnonymous, HttpPost("email-availability"), EnableRateLimiting("email-availability")]
@@ -118,13 +120,22 @@ public sealed class AuthController(
 
         var now = PortalClock.UtcNow();
         if (verification.ExpiresAt <= now)
+        {
+            await otpAudit.MarkStatusAsync(user.Id, OtpPurposes.EmailVerification, verification.CodeHash, OtpStatuses.Expired, cancellationToken);
+            await database.SaveChangesAsync(cancellationToken);
             throw new ApiException(400, "Verification code has expired. Request a new code.");
+        }
         if (verification.AttemptCount >= verificationEmails.MaxAttempts)
+        {
+            await otpAudit.MarkStatusAsync(user.Id, OtpPurposes.EmailVerification, verification.CodeHash, OtpStatuses.Locked, cancellationToken);
+            await database.SaveChangesAsync(cancellationToken);
             throw new ApiException(429, "Too many verification attempts. Request a new code.");
+        }
 
         verification.AttemptCount += 1;
         if (!verificationEmails.Matches(user.Id, payload.Code, verification.CodeHash))
         {
+            await otpAudit.RecordAttemptAsync(user.Id, OtpPurposes.EmailVerification, verification.CodeHash, false, cancellationToken);
             await database.SaveChangesAsync(cancellationToken);
             throw new ApiException(400, "Verification code is incorrect");
         }
@@ -132,6 +143,7 @@ public sealed class AuthController(
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         user.IsEmailVerified = true;
         verification.ConsumedAt = now;
+        await otpAudit.RecordAttemptAsync(user.Id, OtpPurposes.EmailVerification, verification.CodeHash, true, cancellationToken);
         sharePointOutbox.EnqueueCandidate(user.Id);
         await database.SaveChangesAsync(cancellationToken);
         var response = await signInService.IssueAsync(user, cancellationToken);
@@ -169,7 +181,16 @@ public sealed class AuthController(
         var email = payload.Email.Trim().ToLowerInvariant();
         var user = await database.Users.SingleOrDefaultAsync(value => value.Email == email, cancellationToken);
         if (user is null || !user.IsEmailVerified)
+        {
+            var reason = user is null ? "No registered account matches this email" : "The account email is not verified";
+            await emailAudit.StartAsync(
+                email,
+                EmailPurposes.PasswordReset,
+                "PBICareerPosting password reset verification code",
+                DeliveryStatuses.Skipped,
+                reason);
             return passwordRecovery.GenericResponse(email);
+        }
         return await passwordRecovery.IssueAsync(user, cancellationToken);
     }
 
@@ -191,13 +212,22 @@ public sealed class AuthController(
 
         var now = PortalClock.UtcNow();
         if (reset.ExpiresAt <= now)
+        {
+            await otpAudit.MarkStatusAsync(user.Id, OtpPurposes.PasswordReset, reset.CodeHash, OtpStatuses.Expired, cancellationToken);
+            await database.SaveChangesAsync(cancellationToken);
             throw new ApiException(400, "Password reset code has expired. Request a new code.");
+        }
         if (reset.AttemptCount >= passwordRecovery.MaxAttempts)
+        {
+            await otpAudit.MarkStatusAsync(user.Id, OtpPurposes.PasswordReset, reset.CodeHash, OtpStatuses.Locked, cancellationToken);
+            await database.SaveChangesAsync(cancellationToken);
             throw new ApiException(429, "Too many reset attempts. Request a new code.");
+        }
 
         reset.AttemptCount += 1;
         if (!passwordRecovery.Matches(user.Id, payload.Code, reset.CodeHash))
         {
+            await otpAudit.RecordAttemptAsync(user.Id, OtpPurposes.PasswordReset, reset.CodeHash, false, cancellationToken);
             await database.SaveChangesAsync(cancellationToken);
             throw new ApiException(400, "Password reset code is incorrect");
         }
@@ -205,6 +235,7 @@ public sealed class AuthController(
         await using var transaction = await database.Database.BeginTransactionAsync(cancellationToken);
         user.PasswordHash = passwordHasher.Hash(payload.NewPassword);
         reset.ConsumedAt = now;
+        await otpAudit.RecordAttemptAsync(user.Id, OtpPurposes.PasswordReset, reset.CodeHash, true, cancellationToken);
         await database.SaveChangesAsync(cancellationToken);
         await database.AuthSessions
             .Where(value => value.UserId == user.Id && value.RevokedAt == null)
