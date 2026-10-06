@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text.Json.Serialization;
 using CandidatePortal.Api.Configuration;
 using CandidatePortal.Api.Infrastructure;
+using CandidatePortal.Api.Models;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
@@ -15,12 +16,14 @@ public interface IEmailSender
         string recipientAddress,
         string subject,
         string body,
+        string purpose,
         CancellationToken cancellationToken = default);
 }
 
 public sealed class SmtpEmailSender(
     PortalOptions options,
     IHttpClientFactory httpClientFactory,
+    EmailAuditService emailAudit,
     ILogger<SmtpEmailSender> logger) : IEmailSender
 {
     private readonly SemaphoreSlim tokenLock = new(1, 1);
@@ -31,8 +34,10 @@ public sealed class SmtpEmailSender(
         string recipientAddress,
         string subject,
         string body,
+        string purpose,
         CancellationToken cancellationToken = default)
     {
+        var emailLogId = await emailAudit.StartAsync(recipientAddress, purpose, subject);
         if (!options.EmailEnabled)
         {
             logger.LogInformation(
@@ -40,11 +45,13 @@ public sealed class SmtpEmailSender(
                 options.EmailSenderAddress,
                 recipientAddress,
                 subject);
+            await emailAudit.CompleteAsync(emailLogId, DeliveryStatuses.Skipped, "Email delivery is disabled");
             return;
         }
 
         if (!options.SmtpConfigured)
         {
+            await emailAudit.CompleteAsync(emailLogId, DeliveryStatuses.Failed, "SMTP email delivery is not configured");
             throw new ApiException(503, "SMTP email delivery is not configured");
         }
 
@@ -73,14 +80,17 @@ public sealed class SmtpEmailSender(
                 cancellationToken);
             await client.SendAsync(message, cancellationToken);
             await client.DisconnectAsync(true, cancellationToken);
+            await emailAudit.CompleteAsync(emailLogId, DeliveryStatuses.Sent);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException exception)
         {
+            await emailAudit.CompleteAsync(emailLogId, DeliveryStatuses.Failed, exception.Message);
             throw;
         }
         catch (HttpRequestException exception)
         {
             logger.LogError(exception, "Microsoft OAuth token acquisition for SMTP failed");
+            await emailAudit.CompleteAsync(emailLogId, DeliveryStatuses.Failed, exception.Message);
             throw new ApiException(
                 503,
                 "Microsoft OAuth authentication failed. Verify the SMTP tenant, client ID, and client secret.",
@@ -89,6 +99,7 @@ public sealed class SmtpEmailSender(
         catch (MailKit.Security.AuthenticationException exception)
         {
             logger.LogError(exception, "Office 365 SMTP authentication for {Username} failed", options.SmtpUsername);
+            await emailAudit.CompleteAsync(emailLogId, DeliveryStatuses.Failed, exception.Message);
             throw new ApiException(
                 503,
                 "SMTP authentication failed. Verify SMTP.SendAsApp permission, admin consent, and the SMTP username.",
@@ -97,6 +108,7 @@ public sealed class SmtpEmailSender(
         catch (SmtpCommandException exception) when (IsMailboxAccessFailure(exception))
         {
             logger.LogError(exception, "Office 365 could not open sender mailbox {Sender}", options.EmailSenderAddress);
+            await emailAudit.CompleteAsync(emailLogId, DeliveryStatuses.Failed, exception.Message);
             throw new ApiException(
                 503,
                 "The sender mailbox could not be opened. Verify that it is active and grant the Exchange service principal FullAccess to it.",
@@ -110,6 +122,7 @@ public sealed class SmtpEmailSender(
                 options.EmailSenderAddress,
                 recipientAddress,
                 (int)exception.StatusCode);
+            await emailAudit.CompleteAsync(emailLogId, DeliveryStatuses.Failed, exception.Message);
             throw new ApiException(
                 503,
                 $"The email server rejected the message with SMTP status {(int)exception.StatusCode}. Verify the sender and recipient addresses.",
@@ -119,6 +132,7 @@ public sealed class SmtpEmailSender(
             exception is SocketException or IOException or SmtpProtocolException)
         {
             logger.LogError(exception, "SMTP connection to {Host}:{Port} failed", options.SmtpHost, options.SmtpPort);
+            await emailAudit.CompleteAsync(emailLogId, DeliveryStatuses.Failed, exception.Message);
             throw new ApiException(
                 503,
                 "Could not communicate with the SMTP server. Verify the SMTP host, port, TLS settings, and network access.",
@@ -127,6 +141,7 @@ public sealed class SmtpEmailSender(
         catch (Exception exception)
         {
             logger.LogError(exception, "Office 365 SMTP delivery to {Recipient} failed", recipientAddress);
+            await emailAudit.CompleteAsync(emailLogId, DeliveryStatuses.Failed, exception.Message);
             throw new ApiException(
                 503,
                 "Email delivery failed unexpectedly. Review the backend log for the underlying SMTP error.",

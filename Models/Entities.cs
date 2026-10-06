@@ -115,6 +115,65 @@ public sealed class PasswordReset
     public User User { get; set; } = null!;
 }
 
+public static class EmailPurposes
+{
+    public const string RegistrationVerification = "registration_verification";
+    public const string RegistrationConfirmation = "registration_confirmation";
+    public const string PasswordReset = "password_reset";
+    public const string PasswordChanged = "password_changed";
+    public const string DevelopmentTest = "development_test";
+}
+
+public static class DeliveryStatuses
+{
+    public const string Pending = "pending";
+    public const string Sent = "sent";
+    public const string Failed = "failed";
+    public const string Skipped = "skipped";
+}
+
+public sealed class EmailLog
+{
+    public long Id { get; set; }
+    public int? UserId { get; set; }
+    public string RecipientAddress { get; set; } = "";
+    public string Purpose { get; set; } = "";
+    public string Subject { get; set; } = "";
+    public string Status { get; set; } = DeliveryStatuses.Pending;
+    public string? FailureReason { get; set; }
+    public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
+    public DateTime? CompletedAt { get; set; }
+    public User? User { get; set; }
+}
+
+public static class OtpPurposes
+{
+    public const string EmailVerification = "email_verification";
+    public const string PasswordReset = "password_reset";
+}
+
+public static class OtpStatuses
+{
+    public const string Issued = "issued";
+    public const string Consumed = "consumed";
+    public const string Expired = "expired";
+    public const string Locked = "locked";
+}
+
+public sealed class OtpLog
+{
+    public long Id { get; set; }
+    public int UserId { get; set; }
+    public string Purpose { get; set; } = "";
+    public string CodeHash { get; set; } = "";
+    public string Status { get; set; } = OtpStatuses.Issued;
+    public int AttemptCount { get; set; }
+    public DateTime CreatedAt { get; set; } = PortalClock.UtcNow();
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? ConsumedAt { get; set; }
+    public User User { get; set; } = null!;
+}
+
 public sealed class UserConsent
 {
     public int Id { get; set; }
@@ -159,7 +218,7 @@ public static class LookupCategories
     public const string Division = "division";
     public const string JobFunction = "job_function";
     public const string CareerLevel = "career_level";
-    public const string Nationality = "Nationality";
+    public const string Nationality = "nationality";
 }
 
 public sealed class LookupValue

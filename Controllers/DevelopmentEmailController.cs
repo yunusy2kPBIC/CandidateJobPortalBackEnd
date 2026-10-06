@@ -2,6 +2,7 @@ using System.Net;
 using CandidatePortal.Api.Configuration;
 using CandidatePortal.Api.Contracts;
 using CandidatePortal.Api.Infrastructure;
+using CandidatePortal.Api.Models;
 using CandidatePortal.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -39,7 +40,12 @@ public sealed class DevelopmentEmailController(
             ? $"This is a PBICareerPosting SMTP test sent at {submittedAt:O} UTC."
             : payload.Message.Trim();
 
-        await emailSender.SendAsync(recipientAddress, subject, message, cancellationToken);
+        await emailSender.SendAsync(
+            recipientAddress,
+            subject,
+            message,
+            EmailPurposes.DevelopmentTest,
+            cancellationToken);
 
         return new EmailTestResponse(
             "Test email accepted for delivery.",
