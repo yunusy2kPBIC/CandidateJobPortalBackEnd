@@ -57,6 +57,55 @@ public sealed class RecruitmentRequestCreate : IValidatableObject
     };
 }
 
+public sealed class PublicRecruitmentRequestCreate : IValidatableObject
+{
+    [Required, MinLength(1), MaxLength(180)] public string PreferredPosition { get; init; } = "";
+    [Required, MinLength(1), MaxLength(255)] public string Name { get; init; } = "";
+    [Required, MinLength(1), MaxLength(100)] public string Nationality { get; init; } = "";
+    [Required] public string Gender { get; init; } = "";
+    [Required] public string DriverLicenseType { get; init; } = "";
+    [Required, MinLength(9), MaxLength(20)] public string MobileNumber { get; init; } = "";
+    [Required, EmailAddress, MaxLength(255)] public string EmailAddress { get; init; } = "";
+    [Required, MinLength(10), MaxLength(10)] public string IqamaNumber { get; init; } = "";
+    [MaxLength(150)] public string IqamaProfession { get; init; } = "";
+    [MaxLength(180)] public string CurrentEmployer { get; init; } = "Not currently employed";
+    public DateOnly DateOfBirth { get; init; }
+    [Required, MinLength(1), MaxLength(100)] public string City { get; init; } = "";
+    public bool AcceptWorkInAnotherCity { get; init; }
+    [Required] public string Qualification { get; init; } = "";
+    [Range(0, 100_000_000)] public double CurrentSalary { get; init; }
+    [Required, MinLength(1), MaxLength(5000)] public string Comments { get; init; } = "";
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext) =>
+        ToInternalRequest().Validate(validationContext);
+
+    public RecruitmentRequestCreate ToInternalRequest() => new()
+    {
+        PreferredPosition = PreferredPosition,
+        Name = Name,
+        Nationality = Nationality,
+        Gender = Gender,
+        DriverLicenseType = DriverLicenseType,
+        MobileNumber = MobileNumber,
+        EmailAddress = EmailAddress,
+        IqamaNumber = IqamaNumber,
+        IqamaProfession = IqamaProfession,
+        CurrentEmployer = CurrentEmployer,
+        DateOfBirth = DateOfBirth,
+        City = City,
+        AcceptWorkInAnotherCity = AcceptWorkInAnotherCity,
+        Qualification = Qualification,
+        CurrentSalary = CurrentSalary,
+        Comments = Comments,
+        Hired = false,
+    };
+}
+
+public sealed record PublicRecruitmentRequestResponse(
+    string Message,
+    string Reference,
+    bool ConfirmationEmailSent);
+
 public sealed class RecruitmentRequestUpdate : IValidatableObject
 {
     [MinLength(1), MaxLength(180)] public string? PreferredPosition { get; init; }
