@@ -100,6 +100,16 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true,
             }));
+    options.AddPolicy("public-recruitment-request", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+                AutoReplenishment = true,
+            }));
 });
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .WithOrigins(portalOptions.FrontendOrigins)

@@ -121,6 +121,7 @@ public static class EmailPurposes
     public const string RegistrationConfirmation = "registration_confirmation";
     public const string PasswordReset = "password_reset";
     public const string PasswordChanged = "password_changed";
+    public const string RecruitmentRequestConfirmation = "recruitment_request_confirmation";
     public const string DevelopmentTest = "development_test";
 }
 
